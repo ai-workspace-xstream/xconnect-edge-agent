@@ -128,7 +128,13 @@ jobs:
               --generate-notes
           fi
 
-          gh release upload "${GITHUB_REF_NAME}" \
-            --repo "${GITHUB_REPOSITORY}" \
-            release-assets/* \
-            --clobber
+          for file in release-assets/*; do
+            for i in 1 2 3 4 5; do
+              if timeout 60 gh release upload "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" "$file" --clobber; then
+                break
+              fi
+              echo "Upload for $file failed, retrying..."
+              sleep 5
+              if [ $i -eq 5 ]; then exit 1; fi
+            done
+          done
