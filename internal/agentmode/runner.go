@@ -101,99 +101,111 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	tracker := newSyncTracker()
-	source := NewHTTPClientSource(client, tracker)
+	stopFuncs := make([]func(context.Context) error, 0)
+	syncers := make([]*xrayconfig.PeriodicSyncer, 0)
 
-	// If no targets are defined, fallback to the legacy single target.
-	targets := opts.Xray.Sync.Targets
-	if len(targets) == 0 {
-		if opts.Xray.Sync.OutputPath != "" {
+	// The legacy Xray synchronizer owns Agent Proxy runtime configuration. A
+	// Gateway or One agent must never rewrite it: their Xray and WireGuard
+	// processes are owned by xconnect-gateway/xconnect-one respectively.
+	// Those roles still authenticate and report their control-plane health.
+	if !agentOwnsXraySync(opts.Agent) {
+		logger.Info("external data-plane role; skipping agent-proxy Xray synchronization", "role", opts.Agent.EffectiveRole())
+		tracker.MarkSuccess(time.Now().UTC())
+	} else {
+		source := NewHTTPClientSource(client, tracker)
+
+		// If no targets are defined, fallback to the legacy single target.
+		targets := opts.Xray.Sync.Targets
+		if len(targets) == 0 {
+			if opts.Xray.Sync.OutputPath != "" {
+				targets = append(targets, config.SyncTarget{
+					Name:            "default",
+					OutputPath:      opts.Xray.Sync.OutputPath,
+					TemplatePath:    opts.Xray.Sync.TemplatePath,
+					ValidateCommand: opts.Xray.Sync.ValidateCommand,
+					RestartCommand:  opts.Xray.Sync.RestartCommand,
+				})
+			}
+		}
+
+		if len(targets) == 0 {
+			// Default to standard location if nothing is configured.
 			targets = append(targets, config.SyncTarget{
-				Name:            "default",
-				OutputPath:      opts.Xray.Sync.OutputPath,
-				TemplatePath:    opts.Xray.Sync.TemplatePath,
-				ValidateCommand: opts.Xray.Sync.ValidateCommand,
-				RestartCommand:  opts.Xray.Sync.RestartCommand,
+				Name:       "default",
+				OutputPath: "/usr/local/etc/xray/config.json",
 			})
 		}
-	}
 
-	if len(targets) == 0 {
-		// Default to standard location if nothing is configured
-		targets = append(targets, config.SyncTarget{
-			Name:       "default",
-			OutputPath: "/usr/local/etc/xray/config.json",
-		})
-	}
+		stopFuncs = make([]func(context.Context) error, 0, len(targets))
+		syncers = make([]*xrayconfig.PeriodicSyncer, 0, len(targets))
 
-	stopFuncs := make([]func(context.Context) error, 0, len(targets))
-	syncers := make([]*xrayconfig.PeriodicSyncer, 0, len(targets))
-
-	// Start a syncer for each target
-	for _, target := range targets {
-		outputPath := strings.TrimSpace(target.OutputPath)
-		if outputPath == "" {
-			logger.Warn("skipping sync target with empty output path", "name", target.Name)
-			continue
-		}
-
-		generator := xrayconfig.Generator{
-			Definition: xrayconfig.DefaultDefinition(),
-			OutputPath: outputPath,
-			Domain:     opts.Agent.Domain,
-		}
-		if templatePath := strings.TrimSpace(target.TemplatePath); templatePath != "" {
-			payload, err := os.ReadFile(templatePath)
-			if err != nil {
-				return fmt.Errorf("load xray template %s: %w", templatePath, err)
+		// Start a syncer for each Agent Proxy target.
+		for _, target := range targets {
+			outputPath := strings.TrimSpace(target.OutputPath)
+			if outputPath == "" {
+				logger.Warn("skipping sync target with empty output path", "name", target.Name)
+				continue
 			}
-			generator.Definition = xrayconfig.JSONDefinition{Raw: append([]byte(nil), payload...)}
-		}
 
-		var userAdder xrayconfig.UserAdder
-		if target.DynamicUsers.Enabled {
-			adder, err := xrayconfig.NewCLIUserAdder(target.DynamicUsers.Executable, target.DynamicUsers.Server)
-			if err != nil {
-				return fmt.Errorf("configure dynamic users for target %s: %w", target.Name, err)
+			generator := xrayconfig.Generator{
+				Definition: xrayconfig.DefaultDefinition(),
+				OutputPath: outputPath,
+				Domain:     opts.Agent.Domain,
 			}
-			userAdder = adder
-		}
-
-		syncLogger := logger.With("component", "agent-xray-sync", "target", target.Name)
-		syncer, err := xrayconfig.NewPeriodicSyncer(xrayconfig.PeriodicOptions{
-			Logger:          syncLogger,
-			Interval:        syncInterval,
-			Source:          source,
-			Generator:       generator,
-			ValidateCommand: target.ValidateCommand,
-			RestartCommand:  target.RestartCommand,
-			UserAdder:       userAdder,
-			OnSync: func(result xrayconfig.SyncResult) {
-				if result.Error != nil {
-					tracker.MarkError(result.Error, result.CompletedAt)
-					return
+			if templatePath := strings.TrimSpace(target.TemplatePath); templatePath != "" {
+				payload, err := os.ReadFile(templatePath)
+				if err != nil {
+					return fmt.Errorf("load xray template %s: %w", templatePath, err)
 				}
-				tracker.MarkSuccess(result.CompletedAt)
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		stopSync, err := syncer.Start(ctx)
-		if err != nil {
-			// Clean up already started syncers
-			for _, stop := range stopFuncs {
-				_ = stop(context.Background())
+				generator.Definition = xrayconfig.JSONDefinition{Raw: append([]byte(nil), payload...)}
 			}
-			return err
-		}
-		stopFuncs = append(stopFuncs, stopSync)
-		syncers = append(syncers, syncer)
-	}
 
-	// Controller events are the primary trigger. The sync interval above remains
-	// a low-frequency safety net for disconnects, upgrades, and missed events.
-	go runUserConfigEventWatcher(ctx, client, syncers, logger)
+			var userAdder xrayconfig.UserAdder
+			if target.DynamicUsers.Enabled {
+				adder, err := xrayconfig.NewCLIUserAdder(target.DynamicUsers.Executable, target.DynamicUsers.Server)
+				if err != nil {
+					return fmt.Errorf("configure dynamic users for target %s: %w", target.Name, err)
+				}
+				userAdder = adder
+			}
+
+			syncLogger := logger.With("component", "agent-xray-sync", "target", target.Name)
+			syncer, err := xrayconfig.NewPeriodicSyncer(xrayconfig.PeriodicOptions{
+				Logger:          syncLogger,
+				Interval:        syncInterval,
+				Source:          source,
+				Generator:       generator,
+				ValidateCommand: target.ValidateCommand,
+				RestartCommand:  target.RestartCommand,
+				UserAdder:       userAdder,
+				OnSync: func(result xrayconfig.SyncResult) {
+					if result.Error != nil {
+						tracker.MarkError(result.Error, result.CompletedAt)
+						return
+					}
+					tracker.MarkSuccess(result.CompletedAt)
+				},
+			})
+			if err != nil {
+				return err
+			}
+
+			stopSync, err := syncer.Start(ctx)
+			if err != nil {
+				// Clean up already started syncers
+				for _, stop := range stopFuncs {
+					_ = stop(context.Background())
+				}
+				return err
+			}
+			stopFuncs = append(stopFuncs, stopSync)
+			syncers = append(syncers, syncer)
+		}
+
+		// Controller events are the primary trigger. The sync interval above remains
+		// a low-frequency safety net for disconnects, upgrades, and missed events.
+		go runUserConfigEventWatcher(ctx, client, syncers, logger)
+	}
 
 	defer func() {
 		waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -219,6 +231,10 @@ func Run(ctx context.Context, opts Options) error {
 	reporterCancel()
 	wg.Wait()
 	return nil
+}
+
+func agentOwnsXraySync(agent config.Agent) bool {
+	return agent.EffectiveRole() == config.RoleAgentProxy
 }
 
 func runUserConfigEventWatcher(ctx context.Context, client *Client, syncers []*xrayconfig.PeriodicSyncer, logger *slog.Logger) {

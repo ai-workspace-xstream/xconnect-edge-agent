@@ -40,3 +40,15 @@ agent:
 		}
 	}
 }
+
+func TestOnlyAgentProxyOwnsLegacyXraySynchronizer(t *testing.T) {
+	for role, want := range map[string]bool{
+		config.RoleAgentProxy: true,
+		config.RoleGateway:    false,
+		config.RoleOne:        false,
+	} {
+		if got := agentOwnsXraySync(config.Agent{Role: role}); got != want {
+			t.Errorf("agentOwnsXraySync(%q) = %t, want %t", role, got, want)
+		}
+	}
+}
