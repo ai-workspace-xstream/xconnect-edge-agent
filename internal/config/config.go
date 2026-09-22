@@ -22,6 +22,7 @@ type Log struct {
 }
 
 type Agent struct {
+	Role           string        `yaml:"role"`
 	ID             string        `yaml:"id"`
 	NodeID         string        `yaml:"nodeId"`
 	Region         string        `yaml:"region"`
@@ -38,6 +39,28 @@ type Agent struct {
 	StatusInterval time.Duration `yaml:"statusInterval"`
 	SyncInterval   time.Duration `yaml:"syncInterval"`
 	TLS            TLS           `yaml:"tls"`
+}
+
+const (
+	RoleGateway    = "gateway"
+	RoleOne        = "one"
+	RoleAgentProxy = "agent-proxy"
+)
+
+func (a Agent) EffectiveRole() string {
+	if a.Role == "" {
+		return RoleAgentProxy
+	}
+	return a.Role
+}
+
+func (a Agent) ValidateRole() error {
+	switch a.EffectiveRole() {
+	case RoleGateway, RoleOne, RoleAgentProxy:
+		return nil
+	default:
+		return fmt.Errorf("agent.role must be one of %q, %q, or %q", RoleGateway, RoleOne, RoleAgentProxy)
+	}
 }
 
 type TLS struct {
@@ -114,6 +137,12 @@ func LoadReader(r io.Reader) (*Config, error) {
 	}
 	if billingURL := os.Getenv("BILLING_SERVICE_BASE_URL"); billingURL != "" {
 		cfg.Billing.BaseURL = billingURL
+	}
+	if role := os.Getenv("XCONNECT_ROLE"); role != "" {
+		cfg.Agent.Role = role
+	}
+	if err := cfg.Agent.ValidateRole(); err != nil {
+		return nil, err
 	}
 
 	return &cfg, nil

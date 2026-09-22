@@ -45,7 +45,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logger.Info("starting agent", "id", cfg.Agent.ID)
+	logger.Info("starting agent", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole())
 
 	opts := agentmode.Options{
 		Logger:  logger,
