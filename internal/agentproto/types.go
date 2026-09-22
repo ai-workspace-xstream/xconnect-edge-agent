@@ -37,6 +37,7 @@ type XrayStatus struct {
 	LastSync     *time.Time `json:"lastSync,omitempty"`
 	ConfigHash   string     `json:"configHash,omitempty"`
 	NodeID       string     `json:"nodeId,omitempty"`
+	NetworkID    string     `json:"networkId,omitempty"`
 	Region       string     `json:"region,omitempty"`
 	Pool         string     `json:"pool,omitempty"`
 	Provider     string     `json:"provider,omitempty"`
