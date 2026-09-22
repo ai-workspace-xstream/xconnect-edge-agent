@@ -21,6 +21,7 @@ type ClientListResponse struct {
 // instance.
 type StatusReport struct {
 	AgentID      string     `json:"agentId"` // Self-reported agent ID (e.g., "hk-xhttp.svc.plus")
+	Role         string     `json:"role,omitempty"`
 	Healthy      bool       `json:"healthy"`
 	Message      string     `json:"message,omitempty"`
 	HeartbeatAt  time.Time  `json:"heartbeatAt"`

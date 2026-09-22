@@ -18,6 +18,7 @@ xconnect_edge_agent_log_dir: "/var/log/xconnect-edge-agent"
 xconnect_edge_agent_data_dir: "/opt/xconnect-edge-agent"
 
 # Agent configuration
+agent_role: "agent-proxy"
 agent_id: "us-xhttp.svc.plus"
 agent_node_id: "{{ agent_id }}"
 agent_region: ""

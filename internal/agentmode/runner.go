@@ -43,6 +43,9 @@ func Run(ctx context.Context, opts Options) error {
 	if token == "" {
 		return errors.New("agent.apiToken is required")
 	}
+	if err := opts.Agent.ValidateRole(); err != nil {
+		return err
+	}
 
 	syncInterval := opts.Agent.SyncInterval
 	if syncInterval <= 0 {
@@ -290,6 +293,7 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 
 	report := agentproto.StatusReport{
 		AgentID:      agent.ID,
+		Role:         agent.EffectiveRole(),
 		Healthy:      healthy,
 		Message:      snapshot.LastError,
 		HeartbeatAt:  time.Now().UTC(),

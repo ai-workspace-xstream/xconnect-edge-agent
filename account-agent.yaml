@@ -4,6 +4,7 @@ log:
   level: info
 
 agent:
+  role: "agent-proxy"
   id: "edge-node-1"
   controllerUrl: "https://accounts.svc.plus"
   apiToken: "replace-with-agent-token"
