@@ -25,6 +25,7 @@ type Agent struct {
 	Role           string        `yaml:"role"`
 	ID             string        `yaml:"id"`
 	NodeID         string        `yaml:"nodeId"`
+	NetworkID      string        `yaml:"networkId"`
 	Region         string        `yaml:"region"`
 	Pool           string        `yaml:"pool"`
 	Provider       string        `yaml:"provider"`

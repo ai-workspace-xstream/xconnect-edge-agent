@@ -326,6 +326,7 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 				return &copy
 			}(),
 			NodeID:       firstNonEmpty(strings.TrimSpace(agent.NodeID), strings.TrimSpace(agent.ID)),
+			NetworkID:    strings.TrimSpace(agent.NetworkID),
 			Region:       strings.TrimSpace(agent.Region),
 			Pool:         strings.TrimSpace(agent.Pool),
 			Provider:     strings.TrimSpace(agent.Provider),

@@ -14,6 +14,7 @@ func TestBuildStatusReportIncludesPoolMetadata(t *testing.T) {
 agent:
   id: ph-surfercloud-01
   nodeId: ph-surfercloud-01
+  networkId: net-uat
   region: ph-mnl
   pool: ph
   provider: surfercloud
@@ -29,6 +30,9 @@ agent:
 	}
 	if report.Xray.Pool != "ph" || report.Xray.Provider != "surfercloud" || report.Xray.Product != "ulighthost" {
 		t.Fatalf("status metadata = %#v", report.Xray)
+	}
+	if report.Xray.NetworkID != "net-uat" {
+		t.Fatalf("network id = %q, want net-uat", report.Xray.NetworkID)
 	}
 	payload, err := json.Marshal(report)
 	if err != nil {
