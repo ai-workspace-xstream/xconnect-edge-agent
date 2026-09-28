@@ -102,9 +102,7 @@ type SyncTarget struct {
 	DynamicUsers    DynamicUserSync `yaml:"dynamicUsers"`
 }
 
-// DynamicUserSync configures Xray HandlerService updates for client additions.
-// Withdrawing a paused user's node-local credential still restarts Xray so
-// established sessions are terminated immediately; the account is never deleted.
+// DynamicUserSync configures Xray HandlerService updates for runtime user changes.
 type DynamicUserSync struct {
 	Enabled    bool   `yaml:"enabled"`
 	Server     string `yaml:"server"`

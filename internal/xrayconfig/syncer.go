@@ -54,6 +54,7 @@ type PeriodicSyncer struct {
 	trigger         chan struct{}
 
 	mu          sync.Mutex
+	syncMu      sync.Mutex
 	lastHash    string
 	lastClients []Client
 }
@@ -180,6 +181,9 @@ func (s *PeriodicSyncer) run(ctx context.Context) {
 }
 
 func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	clients, err := s.source.ListClients(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("list clients: %w", err)
@@ -212,34 +216,36 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		}
 	}
 
-	// The first sync bootstraps the API/tagged inbound through the normal
-	// restart path. After that, pure additions can be applied through
-	// HandlerService without interrupting established connections. Withdrawing a
-	// paused user's node-local credential or mutating a credential still restarts
-	// Xray to enforce the pause immediately; this never deletes the account.
+	// The first sync bootstraps the API/tagged inbound through the configured
+	// restart path. Pure additions use HandlerService. A removal must restart
+	// only this Xray target: RemoveUser only blocks future authentication and
+	// cannot terminate a session that has already authenticated.
 	s.mu.Lock()
 	previousClients := append([]Client(nil), s.lastClients...)
 	s.mu.Unlock()
-	added, destructive := clientDelta(previousClients, clients)
-	dynamicApplied := false
-	if previousHash != "" && !destructive {
-		if len(added) == 0 {
-			dynamicApplied = true // Same client set; only ordering changed.
-		} else if s.userAdder != nil {
-			if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
-				s.logger.Warn("dynamic xray user add failed; falling back to restart", "err", err, "users", len(added))
-			} else {
-				dynamicApplied = true
-				s.logger.Info("xray users added without restart", "users", len(added))
+	if previousHash == "" {
+		if len(s.restartCommand) > 0 {
+			if err := s.runCommand(ctx, s.restartCommand, "restart xray"); err != nil {
+				return 0, err
 			}
 		}
-	}
-	if !dynamicApplied && len(s.restartCommand) > 0 {
-		if err := s.runCommand(ctx, s.restartCommand, "restart xray"); err != nil {
-			return 0, err
+	} else {
+		added, removed := clientDelta(previousClients, clients)
+		if len(removed) > 0 {
+			if len(s.restartCommand) == 0 {
+				return 0, errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
+			}
+			if err := s.runCommand(ctx, s.restartCommand, "restart xray after client withdrawal"); err != nil {
+				return 0, err
+			}
+		} else if len(added) > 0 {
+			if s.userAdder == nil {
+				return 0, errors.New("dynamic xray user addition is required for client restoration")
+			}
+			if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
+				return 0, fmt.Errorf("add xray users: %w", err)
+			}
 		}
-	} else if !dynamicApplied && s.userAdder != nil && previousHash != "" {
-		return 0, errors.New("dynamic user update failed and no restart command is configured")
 	}
 
 	s.mu.Lock()
@@ -250,7 +256,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	return len(clients), nil
 }
 
-func clientDelta(previous, current []Client) (added []Client, destructive bool) {
+func clientDelta(previous, current []Client) (added, removed []Client) {
 	previousByID := make(map[string]Client, len(previous))
 	currentByID := make(map[string]Client, len(current))
 	for _, client := range previous {
@@ -259,20 +265,19 @@ func clientDelta(previous, current []Client) (added []Client, destructive bool) 
 	for _, client := range current {
 		currentByID[client.ID] = client
 		old, exists := previousByID[client.ID]
-		if !exists {
+		if !exists || old.Email != client.Email || old.Flow != client.Flow {
 			added = append(added, client)
-			continue
-		}
-		if old.Email != client.Email || old.Flow != client.Flow {
-			destructive = true
+			if exists {
+				removed = append(removed, old)
+			}
 		}
 	}
-	for id := range previousByID {
+	for id, client := range previousByID {
 		if _, exists := currentByID[id]; !exists {
-			destructive = true
+			removed = append(removed, client)
 		}
 	}
-	return added, destructive
+	return added, removed
 }
 
 func (s *PeriodicSyncer) notify(result SyncResult) {
