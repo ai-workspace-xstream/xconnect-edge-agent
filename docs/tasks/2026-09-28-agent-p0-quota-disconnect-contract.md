@@ -35,3 +35,9 @@ Once both contracts exist, the Agent can apply state transitions serially per ac
 - event-stream loss is repaired by the 30-second full-state poll.
 
 This note records the Agent task's cross-repository dependency. It does not change Accounts or claim the runtime behavior is implemented.
+
+## Implementation update (2026-09-28)
+
+The current Accounts `main` contract was confirmed during implementation: `GET /api/agent-server/v1/users/events` emits `users-changed` after its five-second `authorizedAgentClients` change check; the clients endpoint has ETag handling and filters banned users. The earlier statement above that these interfaces are absent is stale. No Accounts contract change is required for this Agent-side reconciliation.
+
+The Agent coalesces event-triggered full-state reconciliations and polls at most every 30 seconds. Pure additions (including quota recovery) use HandlerService. Any client withdrawal restarts only that target's Xray once for the reconciliation; Caddy is never restarted. A local Xray integration test confirmed that `xray api rmu` rejected a new VLESS authentication but an already established session continued relaying payload, and terminating the Xray process closed that session. Therefore the configured Xray restart is the current immediate-disconnect guarantee, with impact to all sessions on the affected Xray target. Failed restart attempts remain uncommitted and are retried on the next event or poll.

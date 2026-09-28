@@ -113,6 +113,7 @@ func Run(ctx context.Context, opts Options) error {
 		tracker.MarkSuccess(time.Now().UTC())
 	} else {
 		source := NewHTTPClientSource(client, tracker)
+		userConfigSyncInterval := userConfigSyncInterval(syncInterval)
 
 		// If no targets are defined, fallback to the legacy single target.
 		targets := opts.Xray.Sync.Targets
@@ -172,7 +173,7 @@ func Run(ctx context.Context, opts Options) error {
 			syncLogger := logger.With("component", "agent-xray-sync", "target", target.Name)
 			syncer, err := xrayconfig.NewPeriodicSyncer(xrayconfig.PeriodicOptions{
 				Logger:          syncLogger,
-				Interval:        syncInterval,
+				Interval:        userConfigSyncInterval,
 				Source:          source,
 				Generator:       generator,
 				ValidateCommand: target.ValidateCommand,
@@ -202,8 +203,8 @@ func Run(ctx context.Context, opts Options) error {
 			syncers = append(syncers, syncer)
 		}
 
-		// Controller events are the primary trigger. The sync interval above remains
-		// a low-frequency safety net for disconnects, upgrades, and missed events.
+		// Controller events are the primary trigger. User state is fully reconciled
+		// at least every 30 seconds when the stream misses an event or disconnects.
 		go runUserConfigEventWatcher(ctx, client, syncers, logger)
 	}
 
@@ -233,18 +234,29 @@ func Run(ctx context.Context, opts Options) error {
 	return nil
 }
 
+func userConfigSyncInterval(configured time.Duration) time.Duration {
+	const fallback = 30 * time.Second
+	if configured <= 0 || configured > fallback {
+		return fallback
+	}
+	return configured
+}
+
 func agentOwnsXraySync(agent config.Agent) bool {
 	return agent.EffectiveRole() == config.RoleAgentProxy
 }
 
 func runUserConfigEventWatcher(ctx context.Context, client *Client, syncers []*xrayconfig.PeriodicSyncer, logger *slog.Logger) {
-	lastRevision := ""
+	runUserConfigEventWatcherWithRetry(ctx, client, syncers, logger, 30*time.Second)
+}
+
+func runUserConfigEventWatcherWithRetry(ctx context.Context, client *Client, syncers []*xrayconfig.PeriodicSyncer, logger *slog.Logger, retryDelay time.Duration) {
+	seenRevisions := newUserConfigRevisionDeduper(128)
 	for ctx.Err() == nil {
 		err := client.WatchUserConfigEvents(ctx, func(revision string) {
-			if revision == lastRevision {
+			if !seenRevisions.Add(revision) {
 				return
 			}
-			lastRevision = revision
 			logger.Info("controller user-config event received", "revision", revision)
 			for _, syncer := range syncers {
 				syncer.Trigger()
@@ -254,7 +266,7 @@ func runUserConfigEventWatcher(ctx context.Context, client *Client, syncers []*x
 			return
 		}
 		logger.Warn("controller user-config event stream unavailable; periodic fallback remains active", "err", err)
-		timer := time.NewTimer(30 * time.Second)
+		timer := time.NewTimer(retryDelay)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -262,6 +274,32 @@ func runUserConfigEventWatcher(ctx context.Context, client *Client, syncers []*x
 		case <-timer.C:
 		}
 	}
+}
+
+type userConfigRevisionDeduper struct {
+	limit int
+	seen  map[string]struct{}
+	order []string
+}
+
+func newUserConfigRevisionDeduper(limit int) *userConfigRevisionDeduper {
+	return &userConfigRevisionDeduper{limit: limit, seen: make(map[string]struct{})}
+}
+
+func (d *userConfigRevisionDeduper) Add(revision string) bool {
+	if revision == "" {
+		return false
+	}
+	if _, exists := d.seen[revision]; exists {
+		return false
+	}
+	d.seen[revision] = struct{}{}
+	d.order = append(d.order, revision)
+	if len(d.order) > d.limit {
+		delete(d.seen, d.order[0])
+		d.order = d.order[1:]
+	}
+	return true
 }
 
 func buildUserAgent(id string) string {

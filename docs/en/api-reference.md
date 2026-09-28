@@ -214,7 +214,7 @@ This package defines the local runtime configuration model.
 | `TemplatePath` | `string` | Optional JSON template file path. |
 | `ValidateCommand` | `[]string` | Optional command run after render and before restart. |
 | `RestartCommand` | `[]string` | Optional command run after successful validation. |
-| `DynamicUsers` | `DynamicUserSync` | Optional local Xray HandlerService endpoint used to add users without restart; withdrawing a paused user's node-local credential still uses `RestartCommand` to terminate established sessions. The account is retained. |
+| `DynamicUsers` | `DynamicUserSync` | Optional local Xray HandlerService endpoint used to add users without restart. Any client withdrawal restarts this target's Xray once per reconciliation because HandlerService removal cannot close established sessions; Caddy is not restarted. |
 
 #### `Load`
 
@@ -555,7 +555,7 @@ This package owns Xray config rendering and the periodic sync loop.
 
 - Signature: `type PeriodicSyncer struct`
 - Package: `internal/xrayconfig`
-- Purpose: Periodic sync loop that fetches clients, renders config, validates it, and restarts Xray.
+- Purpose: Event-driven client reconciliation with a maximum 30-second full-state fallback; pure additions use HandlerService, while withdrawals restart the affected Xray target to close established sessions.
 - Parameters: None.
 - Returns: None.
 - Usage and constraints: Internal state is encapsulated; create with `NewPeriodicSyncer`.

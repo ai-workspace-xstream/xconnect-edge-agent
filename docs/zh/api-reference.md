@@ -214,7 +214,7 @@ main
 | `TemplatePath` | `string` | 可选 JSON 模板路径。 |
 | `ValidateCommand` | `[]string` | 渲染后、重启前执行的校验命令。 |
 | `RestartCommand` | `[]string` | 校验成功后执行的重启命令。 |
-| `DynamicUsers` | `DynamicUserSync` | 可选的本机 Xray HandlerService 配置；新增用户在线生效，暂停时仅撤下节点本地凭据并执行 `RestartCommand` 以立即断开存量连接，控制面用户永远保留。 |
+| `DynamicUsers` | `DynamicUserSync` | 可选的本机 Xray HandlerService 配置；纯新增在线生效。移除客户端时，每轮 reconciliation 仅重启该 target 的 Xray 一次，因为 HandlerService 无法关闭已建立的会话；不会重启 Caddy。 |
 
 #### `Load`
 
@@ -555,7 +555,7 @@ main
 
 - 签名：`type PeriodicSyncer struct`
 - 所属包：`internal/xrayconfig`
-- 作用：执行“拉取客户端、渲染配置、校验、重启 Xray”的周期同步循环。
+- 作用：事件驱动同步客户端，并至少每 30 秒全量兜底；纯新增通过 HandlerService 热添加，移除客户端时重启受影响的 Xray target 以关闭存量会话。
 - 参数：无。
 - 返回：无。
 - 调用时机 / 约束：内部状态封装，应通过 `NewPeriodicSyncer` 构造。
