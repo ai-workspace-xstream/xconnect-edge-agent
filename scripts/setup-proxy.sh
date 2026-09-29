@@ -20,6 +20,10 @@ CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
 AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
+VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
+VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
+VAULT_TLS_CERT_FIELD="${VAULT_TLS_CERT_FIELD:-tls_fullchain_pem_b64}"
+VAULT_TLS_KEY_FIELD="${VAULT_TLS_KEY_FIELD:-tls_key_pem_b64}"
 
 is_truthy() {
     case "${1:-}" in
@@ -30,6 +34,149 @@ is_truthy() {
             return 1
             ;;
     esac
+}
+
+configure_vault_agent_tls() {
+    local vault_zip vault_sha256sums expected_sha256 vault_arch
+
+    if [ -z "$VAULT_ADDR" ] && [ -z "$VAULT_TOKEN" ] && [ -z "$VAULT_TLS_SECRET_PATH" ]; then
+        return 0
+    fi
+    if [ -z "$VAULT_ADDR" ] || [ -z "$VAULT_TOKEN" ] || [ -z "$VAULT_TLS_SECRET_PATH" ]; then
+        echo -e "$RED Vault TLS sync requires VAULT_ADDR, VAULT_TOKEN, and VAULT_TLS_SECRET_PATH.$NC" >&2
+        return 1
+    fi
+
+    vault_arch="$(detect_goarch)"
+    if ! command -v unzip >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y unzip
+    fi
+    if ! command -v vault >/dev/null 2>&1; then
+        vault_zip="/var/cache/vault_"$VAULT_AGENT_VERSION"_linux_"$vault_arch".zip"
+        vault_sha256sums="/tmp/vault_"$VAULT_AGENT_VERSION"_SHA256SUMS"
+        curl -fsSL --retry 3 -o "$vault_zip" "https://releases.hashicorp.com/vault/$VAULT_AGENT_VERSION/vault_"$VAULT_AGENT_VERSION"_linux_"$vault_arch".zip"
+        curl -fsSL --retry 3 -o "$vault_sha256sums" "https://releases.hashicorp.com/vault/$VAULT_AGENT_VERSION/vault_"$VAULT_AGENT_VERSION"_SHA256SUMS"
+        expected_sha256="$(awk -v file="vault_"$VAULT_AGENT_VERSION"_linux_"$vault_arch".zip" '$2 == file { print $1 }' "$vault_sha256sums")"
+        if [ -z "$expected_sha256" ]; then
+            echo -e "$RED Could not resolve the Vault Agent archive checksum.$NC" >&2
+            return 1
+        fi
+        printf '%s  %s\n' "$expected_sha256" "$vault_zip" | sha256sum -c -
+        unzip -oq "$vault_zip" -d /usr/local/bin
+        chmod 0755 /usr/local/bin/vault
+    fi
+
+    mkdir -p /etc/vault.d /run/vault-agent "$VAULT_AGENT_TLS_STAGE_DIR/current" /etc/caddy/tls
+    chmod 0750 /etc/vault.d /run/vault-agent "$VAULT_AGENT_TLS_STAGE_DIR" "$VAULT_AGENT_TLS_STAGE_DIR/current"
+    chown root:root /etc/vault.d /run/vault-agent
+    chown root:caddy "$VAULT_AGENT_TLS_STAGE_DIR" "$VAULT_AGENT_TLS_STAGE_DIR/current"
+    umask 077
+    printf '%s\n' "$VAULT_TOKEN" > /etc/vault.d/token
+    chmod 0600 /etc/vault.d/token
+
+    cat > /etc/vault.d/tls.ctmpl <<'EOF'
+{{- with secret (env "VAULT_TLS_SECRET_PATH") -}}
+{{ .Data.metadata.version }}
+{{ index .Data.data (env "VAULT_TLS_CERT_FIELD") | base64Decode | writeToFile (printf "%s/current/fullchain.pem" (env "VAULT_AGENT_TLS_STAGE_DIR")) "root" "caddy" "0640" }}
+{{ index .Data.data (env "VAULT_TLS_KEY_FIELD") | base64Decode | writeToFile (printf "%s/current/key.pem" (env "VAULT_AGENT_TLS_STAGE_DIR")) "root" "caddy" "0640" }}
+{{- end -}}
+EOF
+    chmod 0600 /etc/vault.d/tls.ctmpl
+
+    cat > /etc/vault.d/agent.hcl <<EOF
+vault {
+  address = "$VAULT_ADDR"
+}
+
+auto_auth {
+  method "token_file" {
+    config = {
+      token_file = "/etc/vault.d/token"
+    }
+  }
+}
+
+template_config {
+  static_secret_render_interval = "5m"
+}
+
+template {
+  source               = "/etc/vault.d/tls.ctmpl"
+  destination          = "/run/vault-agent/tls-version"
+  perms                = "0600"
+  error_on_missing_key = true
+
+  exec {
+    command = ["/usr/local/sbin/sync-vault-agent-caddy-tls"]
+    timeout = "30s"
+  }
+}
+EOF
+    chmod 0600 /etc/vault.d/agent.hcl
+
+    cat > /usr/local/sbin/sync-vault-agent-caddy-tls <<'EOF'
+#!/bin/sh
+set -eu
+stage_dir=$VAULT_AGENT_TLS_STAGE_DIR
+cert_source="$stage_dir/current/fullchain.pem"
+key_source="$stage_dir/current/key.pem"
+cert_dest=/etc/caddy/tls/agent-proxy.crt
+key_dest=/etc/caddy/tls/agent-proxy.key
+openssl x509 -in "$cert_source" -noout -checkend 86400
+openssl x509 -in "$cert_source" -noout -checkhost "$VAULT_AGENT_TLS_DOMAIN"
+cert_public_key="$(openssl x509 -in "$cert_source" -pubkey -noout | openssl pkey -pubin -outform DER | sha256sum | awk '{print $1}')"
+key_public_key="$(openssl pkey -in "$key_source" -pubout -outform DER | sha256sum | awk '{print $1}')"
+[ "$cert_public_key" = "$key_public_key" ]
+install -o root -g caddy -m 0644 "$cert_source" "$cert_dest.next"
+install -o root -g caddy -m 0640 "$key_source" "$key_dest.next"
+mv -f "$cert_dest.next" "$cert_dest"
+mv -f "$key_dest.next" "$key_dest"
+caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+if systemctl is-active --quiet caddy; then
+    systemctl reload caddy
+fi
+EOF
+    chmod 0750 /usr/local/sbin/sync-vault-agent-caddy-tls
+
+    cat > /etc/systemd/system/vault-agent-tls.service <<EOF
+[Unit]
+Description=Vault Agent certificate sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+Environment="VAULT_TLS_SECRET_PATH=$VAULT_TLS_SECRET_PATH"
+Environment="VAULT_TLS_CERT_FIELD=$VAULT_TLS_CERT_FIELD"
+Environment="VAULT_TLS_KEY_FIELD=$VAULT_TLS_KEY_FIELD"
+Environment="VAULT_AGENT_TLS_STAGE_DIR=$VAULT_AGENT_TLS_STAGE_DIR"
+Environment="VAULT_AGENT_TLS_DOMAIN=$DOMAIN"
+ExecStart=/usr/local/bin/vault agent -config=/etc/vault.d/agent.hcl
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    chmod 0644 /etc/systemd/system/vault-agent-tls.service
+    systemctl daemon-reload
+    systemctl enable vault-agent-tls.service
+    systemctl restart vault-agent-tls.service
+    for _ in $(seq 1 60); do
+        if [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/fullchain.pem" ] && [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/key.pem" ]; then
+            echo -e "$GREEN Vault Agent rendered the TLS certificate and key.$NC"
+            return 0
+        fi
+        sleep 2
+    done
+    echo -e "$RED Vault Agent did not render TLS material within 120 seconds.$NC" >&2
+    journalctl -u vault-agent-tls.service -n 40 --no-pager || true
+    return 1
 }
 
 detect_goarch() {
@@ -398,6 +545,11 @@ Env (optional):
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
+  VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
+  VAULT_TOKEN                 # read at runtime; never commit to this script
+  VAULT_TLS_SECRET_PATH       # Vault KV v2 data path
+  VAULT_TLS_CERT_FIELD        # defaults to tls_fullchain_pem_b64
+  VAULT_TLS_KEY_FIELD         # defaults to tls_key_pem_b64
   CLOUDFLARE_ZONE_NAME        # required with CLOUDFLARE_API_TOKEN
   OPEN_STUNNEL_5443=true   # when co-locating PostgreSQL on the same node
 
@@ -813,7 +965,12 @@ TLS_CONFIG=""
 XRAY_CERT="${CADDY_CERT_DIR}/${DOMAIN}.crt"
 XRAY_KEY="${CADDY_CERT_DIR}/${DOMAIN}.key"
 
-if [ -f "$LE_CERT" ] && [ -f "$LE_KEY" ]; then
+if [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
+    TLS_CONFIG="tls /etc/caddy/tls/agent-proxy.crt /etc/caddy/tls/agent-proxy.key"
+    XRAY_CERT="/etc/caddy/tls/agent-proxy.crt"
+    XRAY_KEY="/etc/caddy/tls/agent-proxy.key"
+    mkdir -p /etc/caddy/tls
+elif [ -f "$LE_CERT" ] && [ -f "$LE_KEY" ]; then
     echo "Found existing Certbot certificates at $LE_CERT"
     TLS_CONFIG="tls $LE_CERT $LE_KEY"
     XRAY_CERT="$LE_CERT"
@@ -1031,6 +1188,7 @@ systemctl enable caddy || true
 if [ "$STANDALONE_MODE" != true ]; then
     systemctl enable xconnect-edge-agent
 fi
+configure_vault_agent_tls
 systemctl restart xray || true
 systemctl restart caddy || true
 
