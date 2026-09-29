@@ -202,6 +202,9 @@ unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 - 将 `AUTH_URL` 写入 `agent.controllerUrl`，将 `INTERNAL_SERVICE_TOKEN` 写入 `agent.apiToken`；
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
+- 当 `VAULT_ADDR`、`VAULT_TOKEN` 和 `VAULT_TLS_SECRET_PATH` 均已提供时，安装并启用
+   Vault Agent，生成 `/etc/vault.d/agent.hcl`、`/etc/vault.d/token` 和
+   `vault-agent-tls.service`，先完成证书同步再启动 Caddy。
 
 bootstrap 完成后，节点上的 Vault Agent 常驻服务会使用同一组运行时配置自动同步
 证书并 reload Caddy。`VAULT_TLS_SECRET_PATH` 应填写 Vault KV v2 的 data API
