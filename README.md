@@ -176,28 +176,19 @@ export BILLING_SERVICE_URL="https://billing.example.com"
 
 # 供同一 Shell 会话中的 Vault Agent 配置使用；不要写入脚本或仓库
 export VAULT_ADDR="https://vault.example.com"
-export VAULT_AGENT_AUTH_MOUNT="auth/aws"
-export VAULT_AGENT_AUTH_ROLE="<Vault AWS Auth role>"
-export AWS_REGION="<AWS region>"
 export VAULT_TLS_SECRET_PATH="<KV v2 data path>"
 
 read -rsp "Accounts Agent token: " INTERNAL_SERVICE_TOKEN
 echo
 export INTERNAL_SERVICE_TOKEN
+read -rsp "Vault server token: " VAULT_TOKEN
+echo
+export VAULT_TOKEN
 
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  env AGENT_PROXY_DOMAIN="$AGENT_PROXY_DOMAIN" \
-      AUTH_URL="$AUTH_URL" \
-      BILLING_SERVICE_URL="$BILLING_SERVICE_URL" \
-      INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \
-      VAULT_ADDR="$VAULT_ADDR" \
-      VAULT_AGENT_AUTH_MOUNT="$VAULT_AGENT_AUTH_MOUNT" \
-      VAULT_AGENT_AUTH_ROLE="$VAULT_AGENT_AUTH_ROLE" \
-      AWS_REGION="$AWS_REGION" \
-      VAULT_TLS_SECRET_PATH="$VAULT_TLS_SECRET_PATH" \
-      bash -s -- --node "$AGENT_PROXY_DOMAIN"
+  bash -s -- --node "$AGENT_PROXY_DOMAIN"
 
-unset INTERNAL_SERVICE_TOKEN
+unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 ```
 
 如果需要脚本通过 Cloudflare API 更新 DNS，再从当前 Shell 提供
@@ -212,26 +203,11 @@ unset INTERNAL_SERVICE_TOKEN
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
 
-此安装命令不配置 Vault Agent TLS 同步。当前节点如需从 Vault 分发证书，需另行
-应用运维侧的 Vault Agent 配置。`VAULT_TLS_SECRET_PATH` 应填写 Vault KV v2
-的 data API 路径（例如 `kv/data/<运行时路径>`），不要把实际域名或路径固定在
-脚本中；Vault AWS Auth role 只授予该 KV 路径的读取权限。
+bootstrap 完成后，节点上的 Vault Agent 常驻服务会使用同一组运行时配置自动同步
+证书并 reload Caddy。`VAULT_TLS_SECRET_PATH` 应填写 Vault KV v2 的 data API
+路径（例如 `kv/data/<运行时路径>`），不要把实际域名或路径固定在脚本中；
+Vault token 只授予该 KV 路径的读取权限。
 
-也可以显式传参：
-
-```bash
-read -rsp "Accounts Agent token: " INTERNAL_SERVICE_TOKEN
-echo
-export INTERNAL_SERVICE_TOKEN
-
-curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  env AUTH_URL="$AUTH_URL" \
-      BILLING_SERVICE_URL="$BILLING_SERVICE_URL" \
-      INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \
-      bash -s -- --node "$AGENT_PROXY_DOMAIN"
-
-unset INTERNAL_SERVICE_TOKEN
-```
 
 > **提示**：脚本兼容多种环境变量命名（如 `AUTH_URL`、`Accounts_AUTH_URL` 以及 `BILLING_SERVICE_URL`、`Billing-service_AUTH_URL`、`BILLING_BASE_URL` 等）。
 
