@@ -166,17 +166,31 @@ Manager 注入，不要把明文 token 提交到配置文件。
 
 ### 3. 一键部署并接入 Agent 节点（推荐）
 
-确认 accounts 已可访问后，在每台代理节点上执行。下面的 token 只通过当前 Shell
-环境传入，不要把真实 token 固定写进脚本或仓库：
+确认 accounts 已可访问后，在每台代理节点上执行。域名和服务地址通过当前
+Shell 环境传入；不要把真实域名、token 或 Vault 配置固定写进脚本或仓库：
 
 ```bash
+export AGENT_PROXY_DOMAIN="<本节点的代理域名>"
 export AUTH_URL="https://accounts.example.com"
 export BILLING_SERVICE_URL="https://billing.example.com"
-export INTERNAL_SERVICE_TOKEN="<accounts 的 Agent token>"
+
+read -rsp "Accounts Agent token: " INTERNAL_SERVICE_TOKEN
+echo
+export INTERNAL_SERVICE_TOKEN
 
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node hk-xhttp.example.com
+  env AGENT_PROXY_DOMAIN="$AGENT_PROXY_DOMAIN" \
+      AUTH_URL="$AUTH_URL" \
+      BILLING_SERVICE_URL="$BILLING_SERVICE_URL" \
+      INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \
+      bash -s -- --node "$AGENT_PROXY_DOMAIN"
+
+unset INTERNAL_SERVICE_TOKEN
 ```
+
+如果需要脚本通过 Cloudflare API 更新 DNS，再从当前 Shell 提供
+`CLOUDFLARE_ZONE_NAME` 和 `CLOUDFLARE_API_TOKEN`；没有设置 zone 时脚本会跳过
+自动 DNS 更新。不要把 Cloudflare token 写入命令行参数、文档或仓库。
 
 脚本会完成以下工作：
 
@@ -186,14 +200,23 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
 
+此安装命令不配置 Vault Agent TLS 同步。当前节点如需从 Vault 分发证书，需另行
+应用运维侧的 Vault Agent 配置。
+
 也可以显式传参：
 
 ```bash
+read -rsp "Accounts Agent token: " INTERNAL_SERVICE_TOKEN
+echo
+export INTERNAL_SERVICE_TOKEN
+
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node hk-xhttp.example.com \
-    --auth-url https://accounts.example.com \
-    --billing-service-url https://billing.example.com \
-    --internal-service-token "${INTERNAL_SERVICE_TOKEN}"
+  env AUTH_URL="$AUTH_URL" \
+      BILLING_SERVICE_URL="$BILLING_SERVICE_URL" \
+      INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \
+      bash -s -- --node "$AGENT_PROXY_DOMAIN"
+
+unset INTERNAL_SERVICE_TOKEN
 ```
 
 > **提示**：脚本兼容多种环境变量命名（如 `AUTH_URL`、`Accounts_AUTH_URL` 以及 `BILLING_SERVICE_URL`、`Billing-service_AUTH_URL`、`BILLING_BASE_URL` 等）。
