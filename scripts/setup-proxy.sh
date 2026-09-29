@@ -46,6 +46,14 @@ configure_vault_agent_tls() {
         echo -e "$RED Vault TLS sync requires VAULT_ADDR, VAULT_TOKEN, and VAULT_TLS_SECRET_PATH.$NC" >&2
         return 1
     fi
+    case "$VAULT_TLS_SECRET_PATH" in
+        */data/*)
+            ;;
+        *)
+            echo -e "$RED VAULT_TLS_SECRET_PATH must be a Vault KV v2 API path such as kv/data/CICD/domains/<domain>.$NC" >&2
+            return 1
+            ;;
+    esac
 
     vault_arch="$(detect_goarch)"
     if ! command -v unzip >/dev/null 2>&1; then
@@ -547,7 +555,7 @@ Env (optional):
   AGENT_PROXY_DOMAIN
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
-  VAULT_TLS_SECRET_PATH       # Vault KV v2 data path
+  VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
   VAULT_TLS_CERT_FIELD        # defaults to tls_fullchain_pem_b64
   VAULT_TLS_KEY_FIELD         # defaults to tls_key_pem_b64
   CLOUDFLARE_ZONE_NAME        # required with CLOUDFLARE_API_TOKEN
