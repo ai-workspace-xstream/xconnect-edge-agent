@@ -15,7 +15,7 @@ STANDALONE_MODE=false
 STANDALONE_UUID_FILE="/usr/local/etc/xray/standalone.uuid"
 AGENT_DATA_DIR="${AGENT_DATA_DIR:-/opt/xconnect-edge-agent}"
 LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
-CLOUDFLARE_ZONE_NAME="${CLOUDFLARE_ZONE_NAME:-svc.plus}"
+CLOUDFLARE_ZONE_NAME="${CLOUDFLARE_ZONE_NAME:-}"
 CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
 AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
@@ -326,6 +326,11 @@ update_cloudflare_dns_for_domain() {
         return 0
     fi
 
+    if [ -z "$CLOUDFLARE_ZONE_NAME" ]; then
+        echo -e "${YELLOW}CLOUDFLARE_ZONE_NAME not set; skipping automatic DNS update for ${domain_name}.${NC}"
+        return 0
+    fi
+
     echo -e "${GREEN}[dns] Updating Cloudflare DNS: ${domain_name} -> ${target_ip}${NC}"
 
     zone_lookup="$(curl -fsSL \
@@ -386,36 +391,37 @@ update_cloudflare_dns_for_domain() {
 usage() {
     cat <<EOF
 Usage:
-  $0 [--upgrade-only|--upgrade] [--node <domain>] [--auth-url <url>] [--internal-service-token <token>] [--open-stunnel-5443] [--standalone]
+  $0 [--upgrade-only|--upgrade] [--node <domain>] [--cloudflare-zone <zone>] [--auth-url <url>] [--internal-service-token <token>] [--open-stunnel-5443] [--standalone]
   $0 --print-arch
 
 Env (optional):
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
-  OPEN_STUNNEL_5443=true   # when co-locating postgresql.svc.plus on same node
+  AGENT_PROXY_DOMAIN
+  CLOUDFLARE_ZONE_NAME        # required with CLOUDFLARE_API_TOKEN
+  OPEN_STUNNEL_5443=true   # when co-locating PostgreSQL on the same node
 
 Examples:
   # Supports AMD64 and ARM64 (aarch64)
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
-    bash -s -- --node hk-xhttp.svc.plus
+    bash -s -- --node "$AGENT_PROXY_DOMAIN"
 
-  AUTH_URL=https://accounts-svc-plus-266500572462.asia-northeast1.run.app \\
-  INTERNAL_SERVICE_TOKEN=xxxx \\
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
-    bash -s -- --node hk-xhttp.svc.plus
+    env AUTH_URL="$AUTH_URL" INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" \\
+      bash -s -- --node "$AGENT_PROXY_DOMAIN"
 
   # Upgrade binaries only (no config overwrite)
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
     bash -s -- --upgrade-only
 
   # Open 5443/tcp together with 80/443/1443 for stunnel(PostgreSQL) co-location
-  OPEN_STUNNEL_5443=true \\
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
-    bash -s -- --node jp-xhttp.svc.plus
+    env OPEN_STUNNEL_5443=true CLOUDFLARE_ZONE_NAME="$CLOUDFLARE_ZONE_NAME" \\
+      bash -s -- --node "$AGENT_PROXY_DOMAIN"
 
   # Standalone self-host mode: installs caddy + xray only, generates UUID and prints import links
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
-    bash -s -- --node jp-xhttp.svc.plus --standalone
+    bash -s -- --node "$AGENT_PROXY_DOMAIN" --standalone
 
   # Print detected architecture and download artifacts (no install)
   curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \\
@@ -423,7 +429,7 @@ Examples:
 EOF
 }
 
-DOMAIN=""
+DOMAIN="${AGENT_PROXY_DOMAIN:-}"
 AUTH_URL="${AUTH_URL:-${ACCOUNTS_AUTH_URL:-${Accounts_AUTH_URL:-${ACCOUNTS_URL:-}}}}"
 INTERNAL_SERVICE_TOKEN="${INTERNAL_SERVICE_TOKEN:-${NTERNAL_SERVICE_TOKEN:-}}"
 BILLING_URL="${BILLING_URL:-${BILLING_BASE_URL:-${BILLING_SERVICE_URL:-${BILLING_AUTH_URL:-${BILLING_SERVICE_AUTH_URL:-${Billing_service_AUTH_URL:-${billing_service_url:-${billing_service_auth_url:-}}}}}}}}"
@@ -438,6 +444,14 @@ while [ "$#" -gt 0 ]; do
             ;;
         --node=*)
             DOMAIN="${1#*=}"
+            shift
+            ;;
+        --cloudflare-zone)
+            CLOUDFLARE_ZONE_NAME="${2:-}"
+            shift 2
+            ;;
+        --cloudflare-zone=*)
+            CLOUDFLARE_ZONE_NAME="${1#*=}"
             shift
             ;;
         --auth-url|--accounts-url|--accounts-auth-url)
@@ -818,11 +832,11 @@ elif [ -f "/etc/caddy/tls/agent-proxy.crt" ] && [ -f "/etc/caddy/tls/agent-proxy
     chmod 644 /etc/caddy/tls/agent-proxy.crt || true
     chmod 640 /etc/caddy/tls/agent-proxy.key || true
     chown caddy:caddy /etc/caddy/tls/agent-proxy.key || true
-elif [ -f "/etc/xcontrol/tls/svc.plus/current/fullchain.pem" ] && [ -f "/etc/xcontrol/tls/svc.plus/current/key.pem" ]; then
-    echo "Found existing xcontrol TLS certificates at /etc/xcontrol/tls/svc.plus"
-    TLS_CONFIG="tls /etc/xcontrol/tls/svc.plus/current/fullchain.pem /etc/xcontrol/tls/svc.plus/current/key.pem"
-    XRAY_CERT="/etc/xcontrol/tls/svc.plus/current/fullchain.pem"
-    XRAY_KEY="/etc/xcontrol/tls/svc.plus/current/key.pem"
+elif [ -n "${AGENT_DOMAIN_TLS_DIR:-}" ] && [ -f "${AGENT_DOMAIN_TLS_DIR}/current/fullchain.pem" ] && [ -f "${AGENT_DOMAIN_TLS_DIR}/current/key.pem" ]; then
+    echo "Found existing domain TLS certificates under ${AGENT_DOMAIN_TLS_DIR}"
+    TLS_CONFIG="tls ${AGENT_DOMAIN_TLS_DIR}/current/fullchain.pem ${AGENT_DOMAIN_TLS_DIR}/current/key.pem"
+    XRAY_CERT="${AGENT_DOMAIN_TLS_DIR}/current/fullchain.pem"
+    XRAY_KEY="${AGENT_DOMAIN_TLS_DIR}/current/key.pem"
 else
     # Check if Caddy already obtained a cert in any directory
     existing_caddy_cert="$(find /var/lib/caddy/.local/share/caddy/certificates -type f -name "${DOMAIN}.crt" 2>/dev/null | head -n 1)"
