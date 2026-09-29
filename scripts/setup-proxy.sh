@@ -92,7 +92,7 @@ vault {
 auto_auth {
   method "token_file" {
     config = {
-      token_file = "/etc/vault.d/token"
+      token_file_path = "/etc/vault.d/token"
     }
   }
 }
