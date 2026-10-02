@@ -10,7 +10,7 @@ umask 077
 : "${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN must be supplied from Vault}"
 export OBSERVABILITY_ENDPOINT="${OBSERVABILITY_ENDPOINT:-https://observability.svc.plus}"
 # Tested canonical playbook revision; override with a reviewed immutable commit.
-OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-e166056ecf22800b2beef90a2a90685aae64e94e}"
+OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-4a35679825b778d401eb9041face098c938ae449}"
 if [[ ! "$OBSERVABILITY_PLAYBOOKS_REF" =~ ^[a-f0-9]{40}$ ]]; then
     echo 'OBSERVABILITY_PLAYBOOKS_REF must be a full commit SHA.' >&2
     exit 1
@@ -67,6 +67,7 @@ billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower
     'vector_observability_environment': os.environ.get('DEPLOY_ENV', 'production'),
     'vector_tls_verify': True,
     'vector_local_observability_enabled': False,
+    'vector_system_journald_enabled': True,
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
     'xray_exporter_accounts_base_url': os.environ['AUTH_URL'],

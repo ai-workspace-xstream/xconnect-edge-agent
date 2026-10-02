@@ -62,7 +62,7 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
   bash -s -- --node "$AGENT_PROXY_DOMAIN" --with-observability
 ```
 
-`--with-observability` 安装 Caddy、Xray 和 Edge Agent，并调用 [playbooks/deploy_observability_agent.yml](https://github.com/ai-workspace-infra/playbooks/blob/main/deploy_observability_agent.yml)，只部署当前节点。监控包括 Xray Exporter、Node Exporter、Process Exporter、Blackbox 和 Vector；本地采集端口保持绑定回环地址。Vector 向 [observability.svc.plus](https://observability.svc.plus/) 的指标和日志入口推送数据，`instance` 与 `service_domain` 标签标识节点，无需增加中心端抓取清单。
+`--with-observability` 安装 Caddy、Xray 和 Edge Agent，并调用 [playbooks/deploy_observability_agent.yml](https://github.com/ai-workspace-infra/playbooks/blob/main/deploy_observability_agent.yml)，只部署当前节点。监控包括 Xray Exporter、Node Exporter、Process Exporter、Blackbox 和 Vector；本地采集端口保持绑定回环地址，同时采集 Edge Agent、Caddy 和 Xray 的 systemd 日志，兼容没有 syslog 文件的 Debian 节点。Vector 向 [observability.svc.plus](https://observability.svc.plus/) 的指标和日志入口推送数据，`instance` 与 `service_domain` 标签标识节点，无需增加中心端抓取清单。
 
 可选变量：`OBSERVABILITY_ENDPOINT` 覆盖 HTTPS 监控地址，`DEPLOY_ENV` 设置环境标签，`OBSERVABILITY_PLAYBOOKS_REF` 指定经过审查的完整 40 位 playbooks commit SHA。默认固定 playbooks 版本，避免安装时漂移。已有计费快照链路时，继续导出 `VECTOR_BILLING_INGEST_ENABLED=true`、`VECTOR_BILLING_INGEST_URL` 和 `VECTOR_SNAPSHOT_URL=http://127.0.0.1:8686`，以保留 Vector 向 Billing 的转发。Exporter 自动检测当前 Xray Stats API 端口，兼容旧节点的 28080/28081。缺少接入或监控凭据时，组合安装会在修改节点前退出；不传该选项保留原安装流程。该选项不与 `--standalone` 或 `--upgrade-only` 同用。
 

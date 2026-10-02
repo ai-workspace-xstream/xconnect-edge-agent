@@ -75,6 +75,7 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertEqual(hosts['edge.example.test']['ansible_connection'], 'local')
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['vector_tls_verify'])
+        self.assertTrue(values['vector_system_journald_enabled'])
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:10086')
         self.assertEqual(values['blackbox_listen'], '127.0.0.1:9115')
         for secret in ('test-only-agent-secret', 'test-only-vector-secret'):
