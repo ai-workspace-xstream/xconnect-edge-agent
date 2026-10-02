@@ -1,0 +1,22 @@
+name: Validate installers
+
+on:
+  pull_request:
+    paths:
+      - scripts/setup-proxy.sh
+      - scripts/setup-observability.sh
+      - tests/test_setup_observability.py
+      - .github/workflows/validate-installers.yml
+
+permissions:
+  contents: read
+
+jobs:
+  installer-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check shell syntax
+        run: bash -n scripts/setup-proxy.sh scripts/setup-observability.sh
+      - name: Exercise local deployment orchestration
+        run: python3 -m unittest discover -s tests -p test_setup_observability.py -v
