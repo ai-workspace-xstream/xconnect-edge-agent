@@ -4,6 +4,9 @@ log:
   level: info
 
 agent:
+  # Set these per deployment, e.g. region: hk, pool: hk-main.
+  region: ""
+  pool: ""
   id: "cloud-run-agent"
   controllerUrl: "https://accounts.svc.plus"
   apiToken: "PLACEHOLDER" # Will be overridden by INTERNAL_SERVICE_TOKEN env var

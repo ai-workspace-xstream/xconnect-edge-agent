@@ -30,7 +30,7 @@ agent:
 	if report.HeartbeatAt.IsZero() || report.HeartbeatAt.Location() != time.UTC {
 		t.Fatalf("heartbeatAt = %v, want current UTC time", report.HeartbeatAt)
 	}
-	if report.Xray.Pool != "ph" || report.Xray.Provider != "surfercloud" || report.Xray.Product != "ulighthost" {
+	if report.Xray.Region != "ph-mnl" || report.Xray.Pool != "ph" || report.Xray.Provider != "surfercloud" || report.Xray.Product != "ulighthost" {
 		t.Fatalf("status metadata = %#v", report.Xray)
 	}
 	if report.Xray.EntryPoint != "ph.entry.example" || report.Xray.OpenToUsers == nil || *report.Xray.OpenToUsers {
