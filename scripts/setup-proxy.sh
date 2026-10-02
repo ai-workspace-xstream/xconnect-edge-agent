@@ -584,6 +584,7 @@ Env (optional):
   INSTALL_OBSERVABILITY=true  # run canonical monitoring playbook on this node
   VECTOR_AUTH_USER            # ingest credentials supplied by Vault at runtime
   VECTOR_AUTH_PASSWORD
+  VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability
   OBSERVABILITY_ENDPOINT     # defaults to https://observability.svc.plus
   OBSERVABILITY_PLAYBOOKS_REF # immutable playbooks commit (see helper default)
   AUTH_URL
@@ -761,6 +762,38 @@ if [ "$PRINT_ARCH" = true ]; then
     echo -e "${GREEN}Detected architecture: ${ARCH_RAW} (GOARCH=${GOARCH})${NC}"
     echo -e "${GREEN}Runtime bundle asset: artifact-${GOARCH}.tar.gz${NC}"
     exit 0
+fi
+
+# The combined installer can resolve monitoring credentials from the same
+# runtime Vault session used for TLS. Never echo the resulting values.
+if is_truthy "$INSTALL_OBSERVABILITY" &&
+   { [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ]; } &&
+   [ -n "${VAULT_ADDR:-}" ] && [ -n "${VAULT_TOKEN:-}" ]; then
+    monitoring_credentials="$(python3 - <<'PY_MONITORING'
+import json, os, urllib.request, urllib.error
+address = os.environ['VAULT_ADDR'].rstrip('/')
+path = os.environ.get('VAULT_OBSERVABILITY_SECRET_PATH', 'kv/data/CICD/observability').strip('/')
+if not address.startswith('https://') or '/data/' not in path:
+    raise SystemExit('Monitoring credentials require HTTPS Vault and a KV v2 data path.')
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+request = urllib.request.Request(address + '/v1/' + path,
+    headers={'X-Vault-Token': os.environ['VAULT_TOKEN']})
+try:
+    with urllib.request.build_opener(NoRedirect()).open(request, timeout=20) as response:
+        fields = json.load(response)['data']['data']
+    user, password = fields['user'], fields['password']
+    if not all(isinstance(v, str) and v and '\n' not in v and '\r' not in v for v in (user, password)) or ':' in user:
+        raise ValueError('invalid credential fields')
+except (urllib.error.URLError, OSError, KeyError, ValueError):
+    raise SystemExit('Failed to read monitoring user/password from Vault; check runtime token permissions.')
+print(user + ':' + password)
+PY_MONITORING
+)"
+    export VECTOR_AUTH_USER="${monitoring_credentials%%:*}"
+    export VECTOR_AUTH_PASSWORD="${monitoring_credentials#*:}"
+    unset monitoring_credentials
 fi
 
 # Fail before changing the node when the requested combined deployment is incomplete.

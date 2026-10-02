@@ -54,7 +54,7 @@ flowchart LR
 
 ### 托管节点：一键接入 Accounts 与监控
 
-在 Debian/Ubuntu 的目标节点以 root 运行。先由 Vault 在当前 root 会话注入并 **export** 以下运行时变量：`AGENT_PROXY_DOMAIN`（节点域名）、`AUTH_URL`（Accounts 地址）、`INTERNAL_SERVICE_TOKEN`（节点凭据）、`VECTOR_AUTH_USER` 和 `VECTOR_AUTH_PASSWORD`（监控写入凭据）。不要把真实凭据粘贴到命令行参数、Shell 历史或仓库。
+在 Debian/Ubuntu 的目标节点以 root 运行。先由 Vault 在当前 root 会话注入并 **export** 以下运行时变量：`AGENT_PROXY_DOMAIN`（节点域名）、`AUTH_URL`（Accounts 地址）、`INTERNAL_SERVICE_TOKEN`（节点凭据）、`VECTOR_AUTH_USER` 和 `VECTOR_AUTH_PASSWORD`（监控写入凭据）。也可仅由同一 Vault 会话导出 `VAULT_ADDR` 与 `VAULT_TOKEN`：组合安装会自动从 `kv/data/CICD/observability` 的 `user`、`password` 字段读取监控凭据；可用 `VAULT_OBSERVABILITY_SECRET_PATH` 覆盖 KV v2 路径。不要把真实凭据粘贴到命令行参数、Shell 历史或仓库。
 
 ```bash
 # 上述变量已由 Vault 注入当前 root 会话并导出
