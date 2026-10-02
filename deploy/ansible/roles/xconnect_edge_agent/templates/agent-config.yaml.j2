@@ -7,8 +7,8 @@ agent:
   role: "{{ agent_role }}"
   id: "{{ agent_id }}"
   nodeId: "{{ agent_node_id }}"
-  region: "{{ agent_region }}"
-  pool: "{{ agent_pool }}"
+  region: {{ agent_region | to_json }}
+  pool: {{ agent_pool | to_json }}
   provider: "{{ agent_provider }}"
   product: "{{ agent_product }}"
   lineCode: "{{ agent_line_code }}"

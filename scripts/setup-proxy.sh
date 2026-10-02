@@ -25,6 +25,35 @@ VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls
 VAULT_TLS_CERT_FIELD="${VAULT_TLS_CERT_FIELD:-tls_fullchain_pem_b64}"
 VAULT_TLS_KEY_FIELD="${VAULT_TLS_KEY_FIELD:-tls_key_pem_b64}"
 
+update_agent_metadata() {
+    local file="$1" key="$2" value="$3" temporary
+    case "$value" in
+        ""|*[!a-zA-Z0-9._-]*)
+            echo "Agent $key must use letters, digits, dots, underscores or hyphens." >&2
+            return 1
+            ;;
+    esac
+    temporary="$(mktemp)"
+    if ! awk -v key="$key" -v value="$value" '
+        /^agent:[[:space:]]*($|#)/ {
+            in_agent = 1
+            found = 1
+            print
+            print "  " key ": \"" value "\""
+            next
+        }
+        /^[^[:space:]#]/ { in_agent = 0 }
+        in_agent && $0 ~ "^[[:space:]]+" key ":[[:space:]]*" { next }
+        { print }
+        END { if (!found) exit 1 }
+    ' "$file" > "$temporary"; then
+        rm -f "$temporary"
+        return 1
+    fi
+    cat "$temporary" > "$file"
+    rm -f "$temporary"
+}
+
 is_truthy() {
     case "${1:-}" in
         1|true|TRUE|yes|YES|y|Y|on|ON)
@@ -553,6 +582,8 @@ Env (optional):
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
+  AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
+  AGENT_POOL                  # logical pool identifier within the region
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
@@ -937,6 +968,12 @@ if [ "$STANDALONE_MODE" != true ]; then
     fi
 
     # Apply runtime config from args/env (idempotent)
+    if [ -n "${AGENT_REGION:-}" ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml region "$AGENT_REGION"
+    fi
+    if [ -n "${AGENT_POOL:-}" ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml pool "$AGENT_POOL"
+    fi
     sed -i -E "s|^([[:space:]]*id:[[:space:]]*).*$|\\1\"${DOMAIN}\"|g" /etc/agent/account-agent.yaml
     if [ -n "$AUTH_URL" ]; then
         sed -i -E "s|^([[:space:]]*controllerUrl:[[:space:]]*).*$|\\1\"${AUTH_URL}\"|g" /etc/agent/account-agent.yaml

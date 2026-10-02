@@ -11,6 +11,8 @@ set -euo pipefail
 #   4. xconnect-edge-agent        — agent control plane (config sync, heartbeat)
 #
 # Configurable environment variables:
+#   AGENT_REGION          — agent.region (deployment region code)
+#   AGENT_POOL            — agent.pool (deployment pool identifier)
 #   AGENT_ID              — agent.id           (fallback: DOMAIN)
 #   AGENT_CONTROLLER_URL  — agent.controllerUrl (fallback: CONTROLLER_URL)
 #   AGENT_API_TOKEN       — agent.apiToken      (fallback: INTERNAL_SERVICE_TOKEN)
@@ -56,7 +58,11 @@ update_yaml_value() {
   local file="$3"
   local escaped
   escaped="$(printf '%s' "$value" | sed -e 's/[\/&]/\\&/g')"
-  sed -i -E "s|^([[:space:]]*${key}:[[:space:]]*).*$|\\1\"${escaped}\"|g" "$file"
+  if grep -qE "^[[:space:]]*${key}:" "$file"; then
+    sed -i -E "s|^([[:space:]]*${key}:[[:space:]]*).*$|\\1\"${escaped}\"|g" "$file"
+  else
+    sed -i "/^agent:[[:space:]]*$/a\\  ${key}: \"${escaped}\"" "$file"
+  fi
 }
 
 if [ -n "${AGENT_ID}" ]; then
@@ -67,6 +73,13 @@ if [ -n "${AGENT_CONTROLLER_URL}" ]; then
 fi
 if [ -n "${AGENT_API_TOKEN}" ]; then
   update_yaml_value "apiToken" "$AGENT_API_TOKEN" "$AGENT_CONFIG_PATH"
+fi
+
+if [ -n "${AGENT_REGION:-}" ]; then
+  update_yaml_value "region" "$AGENT_REGION" "$AGENT_CONFIG_PATH"
+fi
+if [ -n "${AGENT_POOL:-}" ]; then
+  update_yaml_value "pool" "$AGENT_POOL" "$AGENT_CONFIG_PATH"
 fi
 
 # ── Xray restart loops ──

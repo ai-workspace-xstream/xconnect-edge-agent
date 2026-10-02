@@ -4,6 +4,9 @@ log:
   level: info
 
 agent:
+  # Set these per deployment, e.g. region: hk, pool: hk-main.
+  region: ""
+  pool: ""
   # Unique identifier for this agent node (e.g., "hk-xhttp.svc.plus", "us-tcp.svc.plus")
   id: "hk-xhttp.svc.plus"
   # URL of the accounts.svc.plus controller
