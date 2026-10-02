@@ -1340,6 +1340,11 @@ post_install_network_optimization
 
 if is_truthy "$INSTALL_OBSERVABILITY"; then
     export AUTH_URL INTERNAL_SERVICE_TOKEN
+    if [ -n "$BILLING_URL" ]; then
+        export VECTOR_BILLING_INGEST_ENABLED="${VECTOR_BILLING_INGEST_ENABLED:-true}"
+        export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_URL%/}/v1/ingest/snapshots}"
+        export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
+    fi
     AGENT_PROXY_DOMAIN="$DOMAIN" bash "${REPO_SOURCE_DIR}/scripts/setup-observability.sh"
 fi
 
