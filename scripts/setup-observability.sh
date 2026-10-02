@@ -42,6 +42,19 @@ python3 - "$work_dir" <<'PY'
 import json, os, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 node = os.environ['AGENT_PROXY_DOMAIN']
+
+def api_address(filename, fallback):
+    config_path = pathlib.Path('/usr/local/etc/xray') / filename
+    if not config_path.exists():
+        return fallback
+    config = json.loads(config_path.read_text())
+    api_tag = config.get('api', {}).get('tag')
+    for inbound in config.get('inbounds', []):
+        if api_tag and inbound.get('tag') == api_tag:
+            return '127.0.0.1:' + str(int(inbound['port']))
+    raise SystemExit('Xray Stats API inbound missing in ' + filename)
+
+billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
     'agent_proxy': {'hosts': {node: {'ansible_connection': 'local',
                                   'ansible_python_interpreter': '/usr/bin/python3'}}}
@@ -54,11 +67,12 @@ node = os.environ['AGENT_PROXY_DOMAIN']
     'vector_observability_environment': os.environ.get('DEPLOY_ENV', 'production'),
     'vector_tls_verify': True,
     'vector_local_observability_enabled': False,
-    'vector_billing_ingest_enabled': False,
+    'vector_billing_ingest_enabled': billing_enabled,
+    'xray_exporter_snapshot_features_enabled': billing_enabled,
     'xray_exporter_accounts_base_url': os.environ['AUTH_URL'],
-    # setup-proxy templates expose StatsService on these local ports.
-    'xray_exporter_xray_api_addr': '127.0.0.1:10086',
-    'xray_exporter_tcp_xray_api_addr': '127.0.0.1:10087',
+    # Existing managed nodes may still expose StatsService on 28080/28081.
+    'xray_exporter_xray_api_addr': api_address('config.json', '127.0.0.1:10086'),
+    'xray_exporter_tcp_xray_api_addr': api_address('tcp-config.json', '127.0.0.1:10087'),
     'node_exporter_bind_addr': '127.0.0.1',
     'process_exporter_bind_addr': '127.0.0.1',
     'blackbox_listen': '127.0.0.1:9115',

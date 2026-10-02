@@ -82,6 +82,13 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertFalse(Path((self.work / 'inventory_path').read_text().strip()).exists())
         self.assertIn('--quiet blackbox', (self.work / 'services').read_text())
 
+    def test_billing_snapshot_fanout_remains_enabled_when_requested(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertTrue(values['vector_billing_ingest_enabled'])
+        self.assertTrue(values['xray_exporter_snapshot_features_enabled'])
+
     def test_playbook_failure_propagates_and_cleans_up(self):
         result = self.run_helper(ANSIBLE_EXIT='7')
         self.assertEqual(result.returncode, 7)
