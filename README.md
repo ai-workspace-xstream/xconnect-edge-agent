@@ -189,6 +189,8 @@ Shell 环境传入；不要把真实域名、token 或 Vault 配置固定写进�
 
 ```bash
 export AGENT_PROXY_DOMAIN="<本节点的代理域名>"
+export AGENT_REGION="<部署区域代码，例如 hk 或 jpn-tky>"
+export AGENT_POOL="<区域内的 pool 标识，例如 hk-main>"
 export AUTH_URL="https://accounts.example.com"
 export BILLING_SERVICE_URL="https://billing.example.com"
 
@@ -217,6 +219,7 @@ unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 
 - 安装或更新 Xray、Caddy 和 `xconnect-edge-agent`；
 - 生成 `/etc/agent/account-agent.yaml`，把 `agent.id` 写成 `--node` 的值；
+- 将 `AGENT_REGION`、`AGENT_POOL` 写入 `agent.region`、`agent.pool`，供状态上报和区域入口汇总使用；未提供时保留节点已有值。
 - 将 `AUTH_URL` 写入 `agent.controllerUrl`，将 `INTERNAL_SERVICE_TOKEN` 写入 `agent.apiToken`；
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
@@ -245,6 +248,8 @@ log:
 
 agent:
   id: "hk-xhttp.example.com"
+  region: "hk"
+  pool: "hk-main"
   controllerUrl: "https://accounts.example.com"
   apiToken: "<accounts 的 Agent token>"
   httpTimeout: 15s
@@ -260,6 +265,8 @@ billing:
   collectInterval: 1m
   reconcileInterval: 5m
 ```
+
+`region` 是实际部署区域代码；`pool` 是该区域内的逻辑 pool 标识，同一 pool 的多个节点使用相同值。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`，容器可注入 `AGENT_REGION`、`AGENT_POOL`。
 
 修改后重启并检查服务：
 

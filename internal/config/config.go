@@ -28,6 +28,8 @@ type Agent struct {
 	NetworkID      string        `yaml:"networkId"`
 	Region         string        `yaml:"region"`
 	Pool           string        `yaml:"pool"`
+	EntryPoint     string        `yaml:"entryPoint"`
+	OpenToUsers    *bool         `yaml:"openToUsers"`
 	Provider       string        `yaml:"provider"`
 	Product        string        `yaml:"product"`
 	LineCode       string        `yaml:"lineCode"`

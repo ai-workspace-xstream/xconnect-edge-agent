@@ -4,6 +4,13 @@ log:
   level: info
 
 agent:
+  # Set these per deployment, e.g. region: hk, pool: hk-main.
+  region: ""
+  pool: ""
+  # Regional discovery metadata. entryPoint defaults to domain when omitted.
+  # Set region/pool to the deployed region and pool; never use a runtime node IP.
+  # entryPoint: region-entry.example.com
+  # openToUsers: true
   # Unique identifier for this agent node
   id: "hk-xhttp.svc.plus"
   # URL of the accounts.svc.plus controller

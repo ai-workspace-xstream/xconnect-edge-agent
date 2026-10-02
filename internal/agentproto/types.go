@@ -40,6 +40,8 @@ type XrayStatus struct {
 	NetworkID    string     `json:"networkId,omitempty"`
 	Region       string     `json:"region,omitempty"`
 	Pool         string     `json:"pool,omitempty"`
+	EntryPoint   string     `json:"entryPoint,omitempty"`
+	OpenToUsers  *bool      `json:"openToUsers,omitempty"`
 	Provider     string     `json:"provider,omitempty"`
 	Product      string     `json:"product,omitempty"`
 	LineCode     string     `json:"lineCode,omitempty"`
