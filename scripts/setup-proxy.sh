@@ -12,6 +12,7 @@ echo -e "${GREEN}Starting XConnect Edge Agent Installation...${NC}"
 XRAY_TCP_USER="caddy"
 OPEN_STUNNEL_5443="${OPEN_STUNNEL_5443:-false}"
 STANDALONE_MODE=false
+INSTALL_OBSERVABILITY="${INSTALL_OBSERVABILITY:-false}"
 STANDALONE_UUID_FILE="/usr/local/etc/xray/standalone.uuid"
 AGENT_DATA_DIR="${AGENT_DATA_DIR:-/opt/xconnect-edge-agent}"
 LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
@@ -547,9 +548,15 @@ usage() {
     cat <<EOF
 Usage:
   $0 [--upgrade-only|--upgrade] [--node <domain>] [--cloudflare-zone <zone>] [--auth-url <url>] [--internal-service-token <token>] [--open-stunnel-5443] [--standalone]
+  $0 --with-observability --node <domain>
   $0 --print-arch
 
 Env (optional):
+  INSTALL_OBSERVABILITY=true  # run canonical monitoring playbook on this node
+  VECTOR_AUTH_USER            # ingest credentials supplied by Vault at runtime
+  VECTOR_AUTH_PASSWORD
+  OBSERVABILITY_ENDPOINT     # defaults to https://observability.svc.plus
+  OBSERVABILITY_PLAYBOOKS_REF # immutable playbooks commit (see helper default)
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
@@ -654,6 +661,10 @@ while [ "$#" -gt 0 ]; do
             OPEN_STUNNEL_5443="${1#*=}"
             shift
             ;;
+        --with-observability)
+            INSTALL_OBSERVABILITY=true
+            shift
+            ;;
         --standalone)
             STANDALONE_MODE=true
             shift
@@ -721,12 +732,25 @@ if [ "$PRINT_ARCH" = true ]; then
     exit 0
 fi
 
+# Fail before changing the node when the requested combined deployment is incomplete.
+if is_truthy "$INSTALL_OBSERVABILITY"; then
+    if [ "$STANDALONE_MODE" = true ] || [ "$UPGRADE_ONLY" = true ]; then
+        echo "--with-observability requires a normal managed-node installation." >&2
+        exit 1
+    fi
+    if [ -z "$AUTH_URL" ] || [ -z "$INTERNAL_SERVICE_TOKEN" ] ||
+       [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ]; then
+        echo "Combined deployment requires AUTH_URL, INTERNAL_SERVICE_TOKEN, VECTOR_AUTH_USER and VECTOR_AUTH_PASSWORD from Vault." >&2
+        exit 1
+    fi
+fi
+
 # 1. System Update & Dependencies
 if [ "$UPGRADE_ONLY" = true ]; then
     echo -e "${YELLOW}[1/7] Upgrade mode: skipping apt dependency install.${NC}"
 else
     echo -e "${GREEN}[1/7] Updating system and installing dependencies...${NC}"
-    apt-get update && apt-get install -y curl wget git socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
+    apt-get update && apt-get install -y python3 curl wget git socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
 fi
 
 # 2. Xray Installation
@@ -928,7 +952,7 @@ if [ "$STANDALONE_MODE" != true ]; then
     mkdir -p /etc/agent
     if [ ! -f /etc/agent/account-agent.yaml ]; then
         echo "Initializing new configuration file..."
-        cp "${REPO_SOURCE_DIR}/account-agent.yaml" /etc/agent/account-agent.yaml
+        install -m 0600 "${REPO_SOURCE_DIR}/account-agent.yaml" /etc/agent/account-agent.yaml
         # Initial path setup for templates in the new config
         sed -i 's|config/xray.xhttp.template.json|/usr/local/etc/xray/templates/xray.xhttp.template.json|g' /etc/agent/account-agent.yaml
         sed -i 's|config/xray.tcp.template.json|/usr/local/etc/xray/templates/xray.tcp.template.json|g' /etc/agent/account-agent.yaml
@@ -936,14 +960,21 @@ if [ "$STANDALONE_MODE" != true ]; then
         echo "Configuration file exists at /etc/agent/account-agent.yaml, skipping overwrite."
     fi
 
+    chmod 0600 /etc/agent/account-agent.yaml
+
     # Apply runtime config from args/env (idempotent)
-    sed -i -E "s|^([[:space:]]*id:[[:space:]]*).*$|\\1\"${DOMAIN}\"|g" /etc/agent/account-agent.yaml
-    if [ -n "$AUTH_URL" ]; then
-        sed -i -E "s|^([[:space:]]*controllerUrl:[[:space:]]*).*$|\\1\"${AUTH_URL}\"|g" /etc/agent/account-agent.yaml
-    fi
-    if [ -n "$INTERNAL_SERVICE_TOKEN" ]; then
-        sed -i -E "s|^([[:space:]]*apiToken:[[:space:]]*).*$|\\1\"${INTERNAL_SERVICE_TOKEN}\"|g" /etc/agent/account-agent.yaml
-    fi
+    # JSON strings are valid YAML strings and safely preserve token punctuation.
+    AGENT_PROXY_DOMAIN="$DOMAIN" AUTH_URL="$AUTH_URL" INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" python3 - <<'PY_CONFIG'
+import json, os, pathlib, re
+path = pathlib.Path('/etc/agent/account-agent.yaml')
+text = path.read_text()
+for key, variable in [('id', 'AGENT_PROXY_DOMAIN'), ('controllerUrl', 'AUTH_URL'), ('apiToken', 'INTERNAL_SERVICE_TOKEN')]:
+    value = os.environ[variable]
+    if value:
+        text = re.sub(r'^(\s*' + key + r':\s*).*$',
+                      lambda match: match.group(1) + json.dumps(value), text, flags=re.M)
+path.write_text(text)
+PY_CONFIG
     if [ -n "$BILLING_URL" ]; then
         if grep -q "billing:" /etc/agent/account-agent.yaml; then
             sed -i -E "s|^([[:space:]]*baseURL:[[:space:]]*).*$|\\1\"${BILLING_URL}\"|g" /etc/agent/account-agent.yaml
@@ -1226,16 +1257,21 @@ elif [ -n "$AUTH_URL" ] && [ -n "$INTERNAL_SERVICE_TOKEN" ]; then
     systemctl restart xconnect-edge-agent
     sleep 2
     if systemctl is-active --quiet xconnect-edge-agent; then
-        echo -e "${GREEN}xconnect-edge-agent service is active and registered.${NC}"
+        echo -e "${GREEN}xconnect-edge-agent service is active; controller heartbeat acceptance still requires verification.${NC}"
     else
         echo -e "${YELLOW}xconnect-edge-agent status: $(systemctl is-active xconnect-edge-agent)${NC}"
-        journalctl -u xconnect-edge-agent -n 25 --no-pager || true
+        exit 1
     fi
 else
     echo -e "${YELLOW}Skipping xconnect-edge-agent start: AUTH_URL or INTERNAL_SERVICE_TOKEN is missing.${NC}"
 fi
 
 post_install_network_optimization
+
+if is_truthy "$INSTALL_OBSERVABILITY"; then
+    export AUTH_URL INTERNAL_SERVICE_TOKEN
+    AGENT_PROXY_DOMAIN="$DOMAIN" bash "${REPO_SOURCE_DIR}/scripts/setup-observability.sh"
+fi
 
 echo -e "${GREEN}Installation Complete!${NC}"
 if [ "$STANDALONE_MODE" = true ]; then
