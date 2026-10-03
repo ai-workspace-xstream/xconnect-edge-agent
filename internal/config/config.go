@@ -22,26 +22,27 @@ type Log struct {
 }
 
 type Agent struct {
-	Role           string        `yaml:"role"`
-	ID             string        `yaml:"id"`
-	NodeID         string        `yaml:"nodeId"`
-	NetworkID      string        `yaml:"networkId"`
-	Region         string        `yaml:"region"`
-	Pool           string        `yaml:"pool"`
-	EntryPoint     string        `yaml:"entryPoint"`
-	OpenToUsers    *bool         `yaml:"openToUsers"`
-	Provider       string        `yaml:"provider"`
-	Product        string        `yaml:"product"`
-	LineCode       string        `yaml:"lineCode"`
-	PricingGroup   string        `yaml:"pricingGroup"`
-	StatsEnabled   bool          `yaml:"statsEnabled"`
-	ControllerURL  string        `yaml:"controllerUrl"`
-	APIToken       string        `yaml:"apiToken"`
-	Domain         string        `yaml:"domain"`
-	HTTPTimeout    time.Duration `yaml:"httpTimeout"`
-	StatusInterval time.Duration `yaml:"statusInterval"`
-	SyncInterval   time.Duration `yaml:"syncInterval"`
-	TLS            TLS           `yaml:"tls"`
+	OverlayStatusPath string        `yaml:"overlayStatusPath"`
+	Role              string        `yaml:"role"`
+	ID                string        `yaml:"id"`
+	NodeID            string        `yaml:"nodeId"`
+	NetworkID         string        `yaml:"networkId"`
+	Region            string        `yaml:"region"`
+	Pool              string        `yaml:"pool"`
+	EntryPoint        string        `yaml:"entryPoint"`
+	OpenToUsers       *bool         `yaml:"openToUsers"`
+	Provider          string        `yaml:"provider"`
+	Product           string        `yaml:"product"`
+	LineCode          string        `yaml:"lineCode"`
+	PricingGroup      string        `yaml:"pricingGroup"`
+	StatsEnabled      bool          `yaml:"statsEnabled"`
+	ControllerURL     string        `yaml:"controllerUrl"`
+	APIToken          string        `yaml:"apiToken"`
+	Domain            string        `yaml:"domain"`
+	HTTPTimeout       time.Duration `yaml:"httpTimeout"`
+	StatusInterval    time.Duration `yaml:"statusInterval"`
+	SyncInterval      time.Duration `yaml:"syncInterval"`
+	TLS               TLS           `yaml:"tls"`
 }
 
 const (

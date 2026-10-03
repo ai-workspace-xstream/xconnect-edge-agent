@@ -378,6 +378,15 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 		},
 	}
 
+	if agent.EffectiveRole() != config.RoleAgentProxy && agent.OverlayStatusPath != "" {
+		report.Overlay = readOverlayStatus(agent)
+		if report.Overlay == nil {
+			report.Healthy = false
+			report.Message = "overlay runtime status unavailable or stale"
+		} else {
+			report.Healthy = report.Overlay.Healthy
+		}
+	}
 	return report
 }
 
