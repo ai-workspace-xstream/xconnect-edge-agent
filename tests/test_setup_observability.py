@@ -18,6 +18,8 @@ class InstallerTests(unittest.TestCase):
         self.work = Path(self.temp.name)
         self.bin = self.work / 'bin'
         self.bin.mkdir()
+        self.xray_config_dir = self.work / 'xray'
+        self.xray_config_dir.mkdir()
         source = self.work / 'repo'
         source.mkdir()
         (source / 'deploy_observability_agent.yml').write_text('---\n[]\n')
@@ -30,6 +32,7 @@ class InstallerTests(unittest.TestCase):
                         INTERNAL_SERVICE_TOKEN='test-only-agent-secret',
                         VECTOR_AUTH_USER='test-user',
                         VECTOR_AUTH_PASSWORD='test-only-vector-secret',
+                        XRAY_CONFIG_DIR=str(self.xray_config_dir),
                         TEST_ARCHIVE=str(self.archive), TEST_CAPTURE=str(self.work))
         self.mock('id', 'echo 0\n')
         self.mock('curl', '''while [ "$#" -gt 0 ]; do
@@ -67,6 +70,10 @@ exit "${{INGEST_EXIT:-0}}"
                               env=dict(self.env, **updates), capture_output=True, text=True)
 
     def test_single_node_inventory_and_cleanup(self):
+        (self.xray_config_dir / 'config.json').write_text(
+            json.dumps({'api': {'listen': '127.0.0.1:10086'}}))
+        (self.xray_config_dir / 'tcp-config.json').write_text(
+            json.dumps({'api': {'listen': '127.0.0.1:10087'}}))
         result = self.run_helper()
         self.assertEqual(result.returncode, 0, result.stderr)
         inventory = json.loads((self.work / 'inventory').read_text())
@@ -77,11 +84,22 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertTrue(values['vector_tls_verify'])
         self.assertTrue(values['vector_system_journald_enabled'])
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:10086')
+        self.assertEqual(values['xray_exporter_tcp_xray_api_addr'], '127.0.0.1:10087')
         self.assertEqual(values['blackbox_listen'], '127.0.0.1:9115')
         for secret in ('test-only-agent-secret', 'test-only-vector-secret'):
             self.assertNotIn(secret, (self.work / 'vars').read_text() + result.stdout + result.stderr)
         self.assertFalse(Path((self.work / 'inventory_path').read_text().strip()).exists())
         self.assertIn('--quiet blackbox', (self.work / 'services').read_text())
+
+    def test_legacy_tagged_api_inbound_is_supported(self):
+        (self.xray_config_dir / 'config.json').write_text(json.dumps({
+            'api': {'tag': 'legacy-api'},
+            'inbounds': [{'tag': 'legacy-api', 'port': 28080}],
+        }))
+        result = self.run_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
 
     def test_billing_snapshot_fanout_remains_enabled_when_requested(self):
         result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true')

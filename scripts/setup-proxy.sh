@@ -66,6 +66,77 @@ is_truthy() {
     esac
 }
 
+caddy_fragments_for_domain() {
+    local domain="$1" fragment
+    [ -d /etc/caddy/conf.d ] || return 0
+    while IFS= read -r fragment; do
+        if awk -v domain="$domain" '$1 == domain && $NF == "{" { found = 1 } END { exit !found }' "$fragment"; then
+            printf '%s\n' "$fragment"
+        fi
+    done < <(find /etc/caddy/conf.d -maxdepth 1 -type f -name '*.caddy' -print | sort)
+}
+
+write_caddy_config() {
+    local existing_fragment
+    local -a fragments=()
+    mapfile -t fragments < <(caddy_fragments_for_domain "$DOMAIN")
+    if [ "${#fragments[@]}" -gt 1 ]; then
+        echo "Multiple Caddy fragments declare ${DOMAIN}: ${fragments[*]}" >&2
+        return 1
+    fi
+
+    # Playbooks may own a complete site fragment. Import it as the sole site
+    # definition instead of emitting a second definition in Caddyfile.
+    if [ "${#fragments[@]}" -eq 1 ]; then
+        existing_fragment="${fragments[0]}"
+        if ! grep -Eq 'handle_path[[:space:]]+/xray-exporter/(xhttp|tcp)/\*' "$existing_fragment" \
+            || ! grep -Eq 'path[[:space:]]+/split' "$existing_fragment"; then
+            echo "Existing Caddy fragment for ${DOMAIN} is missing the agent proxy routes: ${existing_fragment}" >&2
+            return 1
+        fi
+        cat > /etc/caddy/Caddyfile <<'EOF'
+import /etc/caddy/conf.d/*.caddy
+EOF
+        return 0
+    fi
+
+    cat > /etc/caddy/Caddyfile <<EOF
+${DOMAIN} {
+    ${TLS_CONFIG}
+
+    handle_path /xray-exporter/xhttp/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    handle_path /xray-exporter/tcp/* {
+        reverse_proxy 127.0.0.1:8081
+    }
+
+    @xhttp {
+        path /split /split/*
+    }
+
+    @xhttp_root path /split
+    rewrite @xhttp_root /split/
+
+    handle @xhttp {
+        uri query -x_padding
+
+        reverse_proxy unix//dev/shm/xray.sock {
+             transport http {
+                 versions h2c 2
+             }
+        }
+    }
+
+    # Fallback/Default site content
+    respond "$( [ "$STANDALONE_MODE" = true ] && printf '%s' 'Standalone Xray Node' || printf '%s' 'XConnect Edge Agent' )"
+}
+
+import /etc/caddy/conf.d/*.caddy
+EOF
+}
+
 configure_vault_agent_tls() {
     local vault_zip vault_sha256sums expected_sha256 vault_arch
 
@@ -1128,41 +1199,10 @@ chown "${XRAY_TCP_USER}:${XRAY_TCP_USER}" /usr/local/etc/xray/tcp-config.json ||
 chmod 0644 /usr/local/etc/xray/tcp-config.json
 echo "Updated Xray TCP template/config to use: ${XRAY_CERT}"
 
-cat > /etc/caddy/Caddyfile <<EOF
-${DOMAIN} {
-    ${TLS_CONFIG}
-
-    handle_path /xray-exporter/xhttp/* {
-        reverse_proxy 127.0.0.1:8080
-    }
-
-    handle_path /xray-exporter/tcp/* {
-        reverse_proxy 127.0.0.1:8081
-    }
-    
-    @xhttp {
-        path /split /split/*
-    }
-
-    @xhttp_root path /split
-    rewrite @xhttp_root /split/
-
-    handle @xhttp {
-        uri query -x_padding
-
-        reverse_proxy unix//dev/shm/xray.sock {
-             transport http {
-                 versions h2c 2
-             }
-        }
-    }
-
-    # Fallback/Default site content
-    respond "$( [ "$STANDALONE_MODE" = true ] && printf '%s' 'Standalone Xray Node' || printf '%s' 'XConnect Edge Agent' )"
-}
-
-import /etc/caddy/conf.d/*.caddy
-EOF
+write_caddy_config
+if command -v caddy >/dev/null 2>&1; then
+    caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+fi
 
 PUBLIC_IPV4="$(resolve_public_ipv4 || true)"
 if [ -n "${PUBLIC_IPV4:-}" ]; then
@@ -1299,7 +1339,8 @@ if [ "$STANDALONE_MODE" != true ]; then
 fi
 configure_vault_agent_tls
 systemctl restart xray || true
-systemctl restart caddy || true
+systemctl restart caddy
+systemctl is-active --quiet caddy
 
 if [ ! -f "$XRAY_CERT" ] || [ ! -f "$XRAY_KEY" ]; then
     echo "Waiting for Caddy to obtain certificate for ${DOMAIN}..."
