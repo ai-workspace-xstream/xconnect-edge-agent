@@ -92,3 +92,34 @@ log:
 		})
 	}
 }
+
+func TestSetupProxyBootstrapsVaultTLSBeforeCaddyValidation(t *testing.T) {
+	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes)
+
+	writeConfig := strings.Index(script, "write_caddy_config\n")
+	if writeConfig < 0 {
+		t.Fatal("missing Caddy configuration step")
+	}
+	vaultBootstrap := strings.Index(script[writeConfig:], "configure_vault_agent_tls")
+	if vaultBootstrap < 0 {
+		t.Fatal("missing Vault TLS bootstrap after Caddyfile generation")
+	}
+	vaultBootstrap += writeConfig
+	caddyValidate := strings.Index(script[vaultBootstrap:], "caddy validate --config /etc/caddy/Caddyfile")
+	if caddyValidate < 0 {
+		t.Fatal("missing Caddy validation")
+	}
+	caddyValidate += vaultBootstrap
+	if vaultBootstrap > caddyValidate {
+		t.Fatal("Vault TLS must be bootstrapped before Caddy validation")
+	}
+
+	// The old step-7 call was too late: set -e exits at the step-6 validation.
+	if strings.Count(script, "configure_vault_agent_tls\n") != 1 {
+		t.Fatal("expected exactly one Vault TLS bootstrap call")
+	}
+}
