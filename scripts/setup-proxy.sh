@@ -1250,6 +1250,12 @@ chmod 0644 /usr/local/etc/xray/tcp-config.json
 echo "Updated Xray TCP template/config to use: ${XRAY_CERT}"
 
 write_caddy_config
+if [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
+    # The Caddyfile deliberately points at the Vault-synced certificate path.
+    # Bootstrap Vault Agent before validating or starting Caddy; otherwise
+    # `set -e` aborts on the missing file and never reaches this setup in step 7.
+    configure_vault_agent_tls
+fi
 if command -v caddy >/dev/null 2>&1; then
     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 fi
@@ -1387,7 +1393,6 @@ systemctl enable caddy || true
 if [ "$STANDALONE_MODE" != true ]; then
     systemctl enable xconnect-edge-agent
 fi
-configure_vault_agent_tls
 systemctl restart xray || true
 systemctl restart caddy
 systemctl is-active --quiet caddy
