@@ -45,6 +45,34 @@ func TestGeneratorRenderUsesEmailAsStatsKey(t *testing.T) {
 	}
 }
 
+func TestDefaultDefinitionEnablesStatsService(t *testing.T) {
+	rendered, err := (Generator{}).Render(nil)
+	if err != nil {
+		t.Fatalf("render default definition: %v", err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(rendered, &config); err != nil {
+		t.Fatalf("decode rendered config: %v", err)
+	}
+	api, ok := config["api"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected api object, got %#v", config["api"])
+	}
+	services, ok := api["services"].([]any)
+	if !ok {
+		t.Fatalf("expected api services, got %#v", api["services"])
+	}
+	seen := map[string]bool{}
+	for _, service := range services {
+		if name, ok := service.(string); ok {
+			seen[name] = true
+		}
+	}
+	if !seen["HandlerService"] || !seen["StatsService"] {
+		t.Fatalf("expected HandlerService and StatsService, got %#v", services)
+	}
+}
+
 func TestGeneratorRenderUpdatesClientsInAnyInbound(t *testing.T) {
 	definition := JSONDefinition{Raw: []byte(`{
 		"inbounds": [

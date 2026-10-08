@@ -44,15 +44,24 @@ root = pathlib.Path(sys.argv[1])
 node = os.environ['AGENT_PROXY_DOMAIN']
 
 def api_address(filename, fallback):
-    config_path = pathlib.Path('/usr/local/etc/xray') / filename
+    config_path = pathlib.Path(os.environ.get('XRAY_CONFIG_DIR', '/usr/local/etc/xray')) / filename
     if not config_path.exists():
         return fallback
     config = json.loads(config_path.read_text())
-    api_tag = config.get('api', {}).get('tag')
+    # Current Xray configs expose the API listener under api.listen. Older
+    # managed nodes used an inbound tagged with api.tag, so retain that
+    # fallback while converging both layouts to the actual listener address.
+    api = config.get('api') or {}
+    listen = api.get('listen')
+    if isinstance(listen, str) and listen.strip():
+        return listen.strip()
+    api_tag = api.get('tag')
     for inbound in config.get('inbounds', []):
         if api_tag and inbound.get('tag') == api_tag:
-            return '127.0.0.1:' + str(int(inbound['port']))
-    raise SystemExit('Xray Stats API inbound missing in ' + filename)
+            port = inbound.get('port')
+            if port is not None:
+                return '127.0.0.1:' + str(int(port))
+    return fallback
 
 billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
@@ -71,7 +80,8 @@ billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
     'xray_exporter_accounts_base_url': os.environ['AUTH_URL'],
-    # Existing managed nodes may still expose StatsService on 28080/28081.
+    # Use the API listener from the rendered Xray config instead of assuming
+    # the legacy StatsService ports 28080/28081.
     'xray_exporter_xray_api_addr': api_address('config.json', '127.0.0.1:10086'),
     'xray_exporter_tcp_xray_api_addr': api_address('tcp-config.json', '127.0.0.1:10087'),
     'node_exporter_bind_addr': '127.0.0.1',
