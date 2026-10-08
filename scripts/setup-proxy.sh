@@ -55,6 +55,55 @@ update_agent_metadata() {
     rm -f "$temporary"
 }
 
+ensure_agent_dynamic_users() {
+    local file="$1" temporary
+    temporary="$(mktemp "${file}.XXXXXX")"
+    chmod 0600 "$temporary"
+    # Existing installations predate HandlerService hot additions. Preserve all
+    # operator settings and explicit dynamicUsers blocks; only backfill missing
+    # blocks for the two standard proxy targets supplied by this installer.
+    if ! awk '
+        function flush_target() {
+            if (!target) return
+            printf "%s", block
+            if (!has_dynamic && (target == "xhttp" || target == "tcp")) {
+                print indent "  dynamicUsers:"
+                print indent "    enabled: true"
+                print indent "    executable: \"/usr/local/bin/xray\""
+                print indent "    server: \"127.0.0.1:" (target == "xhttp" ? "10086" : "10087") "\""
+            }
+            target = ""; block = ""; has_dynamic = 0
+        }
+        /^xray:[[:space:]]*($|#)/ { in_xray = 1 }
+        /^[^[:space:]#]/ && !/^xray:/ { flush_target(); in_xray = 0; in_targets = 0 }
+        in_xray && /^    targets:[[:space:]]*($|#)/ { in_targets = 1 }
+        in_targets && /^[[:space:]]+- name:/ {
+            flush_target()
+            target = $0
+            sub(/^[[:space:]]+- name:[[:space:]]*/, "", target)
+            sub(/[[:space:]]+#.*/, "", target)
+            gsub(/[\042\047[:space:]]/, "", target)
+            indent = $0; sub(/-.*/, "", indent)
+        }
+        target && /^    [^[:space:]#]/ { flush_target(); in_targets = 0 }
+        target {
+            block = block $0 "\n"
+            if ($0 ~ /^[[:space:]]+dynamicUsers:/) has_dynamic = 1
+            next
+        }
+        { print }
+        END { flush_target() }
+    ' "$file" > "$temporary"; then
+        rm -f "$temporary"
+        return 1
+    fi
+    if cmp -s "$file" "$temporary"; then
+        rm -f "$temporary"
+    else
+        mv -f "$temporary" "$file"
+    fi
+}
+
 is_truthy() {
     case "${1:-}" in
         1|true|TRUE|yes|YES|y|Y|on|ON)
@@ -1096,6 +1145,7 @@ if [ "$STANDALONE_MODE" != true ]; then
     fi
 
     chmod 0600 /etc/agent/account-agent.yaml
+    ensure_agent_dynamic_users /etc/agent/account-agent.yaml
 
     # Apply runtime config from args/env (idempotent)
     if [ -n "${AGENT_REGION:-}" ]; then
