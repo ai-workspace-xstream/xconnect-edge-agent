@@ -79,6 +79,9 @@ billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower
     'vector_system_journald_enabled': True,
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
+    # Snapshot-enabled exporters must hand off to the local Vector listener;
+    # the observability playbook rejects an empty or remote target on agents.
+    'xray_exporter_vector_snapshot_url': 'http://127.0.0.1:8686' if billing_enabled else '',
     'xray_exporter_accounts_base_url': os.environ['AUTH_URL'],
     # Use the API listener from the rendered Xray config instead of assuming
     # the legacy StatsService ports 28080/28081.
