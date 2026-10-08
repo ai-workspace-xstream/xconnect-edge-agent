@@ -107,6 +107,14 @@ exit "${{INGEST_EXIT:-0}}"
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['vector_billing_ingest_enabled'])
         self.assertTrue(values['xray_exporter_snapshot_features_enabled'])
+        self.assertEqual(values['xray_exporter_vector_snapshot_url'], 'http://127.0.0.1:8686')
+
+    def test_snapshot_handoff_is_empty_when_billing_is_disabled(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='false')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertFalse(values['xray_exporter_snapshot_features_enabled'])
+        self.assertEqual(values['xray_exporter_vector_snapshot_url'], '')
 
     def test_playbook_failure_propagates_and_cleans_up(self):
         result = self.run_helper(ANSIBLE_EXIT='7')
