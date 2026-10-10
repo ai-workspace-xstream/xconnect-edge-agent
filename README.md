@@ -91,6 +91,14 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 
 ### 第 3 步：获取节点链接，连接客户端
 
+部署完成后可从安装仓库运行只读巡检脚本，检查 Caddy 日志、journald 限额、代理连通性、磁盘和内存：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/verify-log-tune.sh | sudo bash
+```
+
+脚本不会修改配置。可通过 `HOST`、`JOURNAL_MAX`、`KEEP_DAYS` 和 `CADDY_RSS_WARN_MB` 调整检查目标。
+
 脚本运行完成后，终端会自动打印出 **VLESS 节点导入链接**（包括 XHTTP 模式与 TCP Vision 模式）和对应的 UUID。
 
 #### 客户端连接方式推荐：

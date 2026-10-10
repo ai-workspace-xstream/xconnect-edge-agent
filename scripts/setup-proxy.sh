@@ -13,6 +13,9 @@ XRAY_TCP_USER="caddy"
 OPEN_STUNNEL_5443="${OPEN_STUNNEL_5443:-false}"
 STANDALONE_MODE=false
 INSTALL_OBSERVABILITY="${INSTALL_OBSERVABILITY:-false}"
+JOURNAL_MAX="${JOURNAL_MAX:-300M}"
+KEEP_DAYS="${KEEP_DAYS:-14}"
+CADDY_REVERSE_PROXY_LOG_LEVEL="${CADDY_REVERSE_PROXY_LOG_LEVEL:-ERROR}"
 STANDALONE_UUID_FILE="/usr/local/etc/xray/standalone.uuid"
 AGENT_DATA_DIR="${AGENT_DATA_DIR:-/opt/xconnect-edge-agent}"
 LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
@@ -125,9 +128,61 @@ caddy_fragments_for_domain() {
     done < <(find /etc/caddy/conf.d -maxdepth 1 -type f -name '*.caddy' -print | sort)
 }
 
+apply_log_retention_policy() {
+    local config_path=/etc/systemd/journald.conf.d/90-xconnect-log-limits.conf
+    local temporary changed=false
+
+    if [[ ! "$JOURNAL_MAX" =~ ^[1-9][0-9]*[KMG]$ ]]; then
+        echo "JOURNAL_MAX must be a size such as 300M." >&2
+        return 1
+    fi
+    if [[ ! "$KEEP_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+        echo "KEEP_DAYS must be a positive integer." >&2
+        return 1
+    fi
+
+    install -d -m 0755 /etc/systemd/journald.conf.d
+    temporary="$(mktemp)"
+    cat > "$temporary" <<EOF
+[Journal]
+Compress=yes
+SystemMaxUse=${JOURNAL_MAX}
+SystemKeepFree=1G
+SystemMaxFileSize=50M
+MaxRetentionSec=${KEEP_DAYS}day
+RuntimeMaxUse=64M
+RateLimitIntervalSec=30s
+RateLimitBurst=2000
+EOF
+    if ! cmp -s "$temporary" "$config_path" 2>/dev/null; then
+        install -m 0644 "$temporary" "$config_path"
+        changed=true
+    fi
+    rm -f "$temporary"
+
+    if [ "$changed" = true ]; then
+        systemctl restart systemd-journald
+    fi
+    journalctl --rotate >/dev/null 2>&1 || true
+    journalctl --vacuum-size="$JOURNAL_MAX" --vacuum-time="${KEEP_DAYS}d" 2>&1 | tail -n 1 || true
+
+    find /var/log -type f \( -name '*.gz' -o -name '*.[0-9]' -o -name '*.old' \) \
+        -mtime +"$KEEP_DAYS" -print -delete 2>/dev/null | sed 's/^/  removed /' || true
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get clean
+    fi
+}
+
 write_caddy_config() {
     local existing_fragment
     local -a fragments=()
+    case "$CADDY_REVERSE_PROXY_LOG_LEVEL" in
+        ERROR|WARN|INFO|DEBUG) ;;
+        *)
+            echo "CADDY_REVERSE_PROXY_LOG_LEVEL must be ERROR, WARN, INFO, or DEBUG." >&2
+            return 1
+            ;;
+    esac
     mapfile -t fragments < <(caddy_fragments_for_domain "$DOMAIN")
     if [ "${#fragments[@]}" -gt 1 ]; then
         echo "Multiple Caddy fragments declare ${DOMAIN}: ${fragments[*]}" >&2
@@ -143,13 +198,33 @@ write_caddy_config() {
             echo "Existing Caddy fragment for ${DOMAIN} is missing the agent proxy routes: ${existing_fragment}" >&2
             return 1
         fi
-        cat > /etc/caddy/Caddyfile <<'EOF'
+        cat > /etc/caddy/Caddyfile <<EOF
+{
+    log default {
+        exclude http.handlers.reverse_proxy
+    }
+    log xconnect_reverse_proxy {
+        include http.handlers.reverse_proxy
+        level ${CADDY_REVERSE_PROXY_LOG_LEVEL}
+    }
+}
+
 import /etc/caddy/conf.d/*.caddy
 EOF
         return 0
     fi
 
     cat > /etc/caddy/Caddyfile <<EOF
+{
+    log default {
+        exclude http.handlers.reverse_proxy
+    }
+    log xconnect_reverse_proxy {
+        include http.handlers.reverse_proxy
+        level ${CADDY_REVERSE_PROXY_LOG_LEVEL}
+    }
+}
+
 ${DOMAIN} {
     ${TLS_CONFIG}
 
@@ -702,6 +777,9 @@ Usage:
 
 Env (optional):
   INSTALL_OBSERVABILITY=true  # run canonical monitoring playbook on this node
+  JOURNAL_MAX=300M           # system journal size ceiling
+  KEEP_DAYS=14               # journal and rotated-file retention
+  CADDY_REVERSE_PROXY_LOG_LEVEL=ERROR  # retain reverse_proxy errors only
   VECTOR_AUTH_USER            # ingest credentials supplied by Vault at runtime
   VECTOR_AUTH_PASSWORD
   VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability
@@ -1103,6 +1181,7 @@ fi
 
 if [ "$UPGRADE_ONLY" = true ]; then
     post_install_network_optimization
+    apply_log_retention_policy
 
     echo -e "${GREEN}[upgrade-only] Restarting services to apply new binaries...${NC}"
     systemctl restart xray || true
@@ -1250,6 +1329,7 @@ chmod 0644 /usr/local/etc/xray/tcp-config.json
 echo "Updated Xray TCP template/config to use: ${XRAY_CERT}"
 
 write_caddy_config
+apply_log_retention_policy
 if [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
     # The Caddyfile deliberately points at the Vault-synced certificate path.
     # Bootstrap Vault Agent before validating or starting Caddy; otherwise
