@@ -7,6 +7,7 @@
         "listen": "127.0.0.1:10087",
         "services": ["HandlerService", "StatsService"]
     },
+    "stats": {},
     "routing": {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
@@ -54,8 +55,8 @@
                     "certificates": [
                         {
                             "ocspStapling": 3600,
-                            "certificateFile": "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{.Domain}}/{{.Domain}}.crt",
-                            "keyFile": "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{.Domain}}/{{.Domain}}.key"
+                            "certificateFile": "/etc/caddy/tls/agent-proxy.crt",
+                            "keyFile": "/etc/caddy/tls/agent-proxy.key"
                         }
                     ]
                 }

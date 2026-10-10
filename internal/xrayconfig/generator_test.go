@@ -71,6 +71,9 @@ func TestDefaultDefinitionEnablesStatsService(t *testing.T) {
 	if !seen["HandlerService"] || !seen["StatsService"] {
 		t.Fatalf("expected HandlerService and StatsService, got %#v", services)
 	}
+	if stats, ok := config["stats"].(map[string]any); !ok || stats == nil {
+		t.Fatalf("expected top-level stats manager configuration, got %#v", config["stats"])
+	}
 }
 
 func TestGeneratorRenderUpdatesClientsInAnyInbound(t *testing.T) {

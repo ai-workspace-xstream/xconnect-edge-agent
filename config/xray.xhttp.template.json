@@ -52,5 +52,6 @@
                 "outboundTag": "blocked"
             }
         ]
-    }
+    },
+    "stats": {}
 }
