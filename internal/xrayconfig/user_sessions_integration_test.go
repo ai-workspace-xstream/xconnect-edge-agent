@@ -49,7 +49,11 @@ func TestExtendedXrayRevokesOnlySelectedUserAndHotRestores(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	process := exec.CommandContext(ctx, binary, "run", "-c", path)
+	serverBinary := os.Getenv("XRAY_SESSION_SERVER_BINARY")
+	if serverBinary == "" {
+		serverBinary = binary
+	}
+	process := exec.CommandContext(ctx, serverBinary, "run", "-c", path)
 	if err := process.Start(); err != nil {
 		t.Fatal(err)
 	}

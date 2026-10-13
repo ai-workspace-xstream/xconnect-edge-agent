@@ -24,7 +24,7 @@ verifies new authentication rejection, replay safety, and hot restoration.
 UAT release order: reviewed core/Agent source → immutable artifacts and checksums →
 GitOps UAT-only references → Playbooks install/check/backup and opt-in → Toolkit
 dispatch and evidence → dedicated Accounts quota/SSE/recovery acceptance.
-An initial binary replacement may restart Xray once; subsequent revocation/recovery
+Binary replacement and initial reconciliation may restart Xray; subsequent revocation/recovery
 must preserve Xray and Caddy PIDs. Rollback restores the previous binaries and
 removes terminateSessions before restarting the affected target.
 
