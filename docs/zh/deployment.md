@@ -4,6 +4,28 @@
 
 本页用于统一部署前提、支持的拓扑、运维检查项与回滚注意事项。
 
+## UAT Agent Server 部署
+
+UAT shared 和 team 是两个独立的 Agent Server target，分别使用专用 Ansible
+inventory；它们不依赖 Doco-CD，也不读取 Web SaaS 的部署配置。
+
+| edition | GCP VM | labels |
+| :--- | :--- | :--- |
+| shared | `agent-server-shared-uat` | `app=agent-server`, `edition=shared` |
+| team | `agent-server-team-uat` | `app=agent-server`, `edition=team` |
+
+部署顺序如下：
+
+1. 先在目标节点完成 `scripts/setup-proxy.sh`，准备 Xray、Caddy、证书和必要配置。
+2. 从 `deploy/ansible` 分别执行 `./deploy.sh --uat-shared --deploy-only` 或
+   `./deploy.sh --uat-team --deploy-only`。
+3. 通过受控运行时注入 `INTERNAL_SERVICE_TOKEN`；不得写入 inventory、vars、命令行
+   或 Git。UAT target 不执行 Cloudflare DNS 更新。
+4. 验证 `xconnect-edge-agent` 为 active，并使用 accounts Agent API 做一次认证请求。
+
+Ansible inventory 必须只包含对应的单台 VM。缺少节点域名、证书或 UAT token 时，停止
+在前置检查，不得猜测域名、复用生产凭据，或使用 standalone 模式替代托管 Agent 部署。
+
 ## 与当前代码对齐的说明
 
 - 文档目标仓库: `xconnect-edge-agent`
