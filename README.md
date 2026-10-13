@@ -306,6 +306,34 @@ export INTERNAL_SERVICE_TOKEN="<accounts 的 Agent token>"
 每台机器应在变量文件中设置不同的 `agent_id`；`agent_controller_url` 设置为同一个
 accounts HTTPS 地址，token 统一从 `INTERNAL_SERVICE_TOKEN` 注入。
 
+#### UAT Agent Server（shared / team）
+
+UAT 的两台 Agent Server 使用独立 inventory，不依赖 Doco-CD，也不会消费 Web SaaS
+的部署配置：
+
+| edition | GCP VM | GCP labels | inventory | vars |
+| :--- | :--- | :--- | :--- | :--- |
+| shared | `agent-server-shared-uat` | `app=agent-server`, `edition=shared` | `inventory.uat-shared.ini` | `vars/xconnect_edge_agent.uat-shared.yml` |
+| team | `agent-server-team-uat` | `app=agent-server`, `edition=team` | `inventory.uat-team.ini` | `vars/xconnect_edge_agent.uat-team.yml` |
+
+先在每台节点完成 `scripts/setup-proxy.sh` 的 Xray、Caddy 和证书初始化，再从本目录
+执行对应的 Ansible target。UAT target 不声明或修改 Cloudflare DNS；令牌只能在运行时
+通过 Vault/受控环境注入，不能写入 inventory、vars、命令行或仓库：
+
+```bash
+cd deploy/ansible
+# 由受控运行时注入 INTERNAL_SERVICE_TOKEN，不要写入 shell 历史
+./deploy.sh --uat-shared --deploy-only
+./deploy.sh --uat-team --deploy-only
+```
+
+两个命令必须分开执行；每个 target 只包含对应的一台 VM。部署前应确认该节点已有
+`xray.service`、`xray-tcp.service`、`caddy.service` 和 `/etc/caddy/Caddyfile`。
+部署后使用 `systemctl is-active xconnect-edge-agent`、`journalctl -u
+xconnect-edge-agent`，以及带 `Authorization: Bearer` 和 `X-Service-Token` 的
+`/api/agent-server/v1/users` 请求完成认证联调。若没有 UAT 节点域名或 token，停止在
+前置检查，不要猜测域名、复用生产凭据或以 standalone 模式冒充托管 Agent 部署。
+
 ### 6. 对接完成后的验证
 
 先验证 accounts 本身，再验证 Agent API 和节点服务：
