@@ -162,12 +162,16 @@ func Run(ctx context.Context, opts Options) error {
 			}
 
 			var userAdder xrayconfig.UserAdder
+			var userRevoker xrayconfig.UserRevoker
 			if target.DynamicUsers.Enabled {
 				adder, err := xrayconfig.NewCLIUserAdder(target.DynamicUsers.Executable, target.DynamicUsers.Server)
 				if err != nil {
 					return fmt.Errorf("configure dynamic users for target %s: %w", target.Name, err)
 				}
 				userAdder = adder
+				if target.DynamicUsers.TerminateSessions {
+					userRevoker = adder
+				}
 			}
 
 			syncLogger := logger.With("component", "agent-xray-sync", "target", target.Name)
@@ -179,6 +183,7 @@ func Run(ctx context.Context, opts Options) error {
 				ValidateCommand: target.ValidateCommand,
 				RestartCommand:  target.RestartCommand,
 				UserAdder:       userAdder,
+				UserRevoker:     userRevoker,
 				OnSync: func(result xrayconfig.SyncResult) {
 					if result.Error != nil {
 						tracker.MarkError(result.Error, result.CompletedAt)

@@ -2,6 +2,7 @@ package xrayconfig
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +17,57 @@ type CLIUserAdder struct {
 	executable string
 	server     string
 	runner     commandRunner
+}
+
+// RevokeUsers uses a capability-specific operation; an unpatched server fails
+// explicitly rather than reporting a successful authentication-only removal.
+func (a *CLIUserAdder) RevokeUsers(ctx context.Context, generator Generator, clients []Client) error {
+	if len(clients) == 0 {
+		return nil
+	}
+	payload, err := generator.Render(nil)
+	if err != nil {
+		return err
+	}
+	var root struct {
+		Inbounds []struct {
+			Tag      string `json:"tag"`
+			Protocol string `json:"protocol"`
+		} `json:"inbounds"`
+	}
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return err
+	}
+	tags := []string{}
+	for _, inbound := range root.Inbounds {
+		if inbound.Protocol == "vless" {
+			if inbound.Tag == "" {
+				return errors.New("VLESS inbound tag required for session revocation")
+			}
+			tags = append(tags, inbound.Tag)
+		}
+	}
+	if len(tags) == 0 {
+		return errors.New("no VLESS inbound found for session revocation")
+	}
+	for _, tag := range tags {
+		cmd := []string{a.executable, "api", "rmus", "--server=" + a.server, "-tag=" + tag}
+		for _, client := range clients {
+			if strings.TrimSpace(client.Email) == "" || strings.HasPrefix(client.Email, "-") {
+				return errors.New("invalid revocation identity")
+			}
+			cmd = append(cmd, client.Email)
+		}
+		output, err := a.runner(ctx, cmd)
+		if err != nil {
+			return fmt.Errorf("session revocation failed: %w", err)
+		}
+		want := fmt.Sprintf("Revoked %d user session set(s) in total.", len(clients))
+		if !strings.Contains(string(output), want) {
+			return errors.New("session revocation receipt missing")
+		}
+	}
+	return nil
 }
 
 func NewCLIUserAdder(executable, server string) (*CLIUserAdder, error) {
