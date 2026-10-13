@@ -107,9 +107,10 @@ type SyncTarget struct {
 
 // DynamicUserSync configures Xray HandlerService updates for runtime user changes.
 type DynamicUserSync struct {
-	Enabled    bool   `yaml:"enabled"`
-	Server     string `yaml:"server"`
-	Executable string `yaml:"executable"`
+	TerminateSessions bool   `yaml:"terminateSessions"`
+	Enabled           bool   `yaml:"enabled"`
+	Server            string `yaml:"server"`
+	Executable        string `yaml:"executable"`
 }
 
 func Load(path string) (*Config, error) {

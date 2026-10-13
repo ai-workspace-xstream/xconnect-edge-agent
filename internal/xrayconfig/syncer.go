@@ -27,6 +27,12 @@ type UserAdder interface {
 	AddUsers(ctx context.Context, generator Generator, clients []Client) error
 }
 
+// UserRevoker requires an explicit extension RPC that closes existing sessions.
+// Stock authentication-only RemoveUser is never accepted as this capability.
+type UserRevoker interface {
+	RevokeUsers(context.Context, Generator, []Client) error
+}
+
 // PeriodicOptions configures a PeriodicSyncer instance.
 type PeriodicOptions struct {
 	Logger          *slog.Logger
@@ -37,6 +43,7 @@ type PeriodicOptions struct {
 	RestartCommand  []string
 	Runner          commandRunner
 	UserAdder       UserAdder
+	UserRevoker     UserRevoker
 	OnSync          func(SyncResult)
 }
 
@@ -50,6 +57,7 @@ type PeriodicSyncer struct {
 	restartCommand  []string
 	runner          commandRunner
 	userAdder       UserAdder
+	userRevoker     UserRevoker
 	onSync          func(SyncResult)
 	trigger         chan struct{}
 
@@ -95,6 +103,7 @@ func NewPeriodicSyncer(opts PeriodicOptions) (*PeriodicSyncer, error) {
 		restartCommand:  append([]string(nil), opts.RestartCommand...),
 		runner:          runner,
 		userAdder:       opts.UserAdder,
+		userRevoker:     opts.UserRevoker,
 		onSync:          opts.OnSync,
 		trigger:         make(chan struct{}, 1),
 	}, nil
@@ -232,11 +241,25 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	} else {
 		added, removed := clientDelta(previousClients, clients)
 		if len(removed) > 0 {
-			if len(s.restartCommand) == 0 {
-				return 0, errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
-			}
-			if err := s.runCommand(ctx, s.restartCommand, "restart xray after client withdrawal"); err != nil {
-				return 0, err
+			if s.userRevoker != nil {
+				if err := s.userRevoker.RevokeUsers(ctx, s.generator, removed); err != nil {
+					return 0, fmt.Errorf("revoke xray user sessions: %w", err)
+				}
+				if len(added) > 0 {
+					if s.userAdder == nil {
+						return 0, errors.New("dynamic user addition required after revocation")
+					}
+					if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
+						return 0, err
+					}
+				}
+			} else {
+				if len(s.restartCommand) == 0 {
+					return 0, errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
+				}
+				if err := s.runCommand(ctx, s.restartCommand, "restart xray after client withdrawal"); err != nil {
+					return 0, err
+				}
 			}
 		} else if len(added) > 0 {
 			if s.userAdder == nil {
