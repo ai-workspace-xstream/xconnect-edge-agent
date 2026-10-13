@@ -5,7 +5,7 @@
     "api": {
         "tag": "api",
         "listen": "127.0.0.1:10087",
-        "services": ["HandlerService"]
+        "services": ["HandlerService", "StatsService"]
     },
     "routing": {
         "domainStrategy": "IPIfNonMatch",
@@ -19,6 +19,7 @@
             }
         ]
     },
+    "stats": {},
     "inbounds": [
         {
             "tag": "tcp-vless",
@@ -54,8 +55,8 @@
                     "certificates": [
                         {
                             "ocspStapling": 3600,
-                            "certificateFile": "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ agent_id }}/{{ agent_id }}.crt",
-                            "keyFile": "/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/{{ agent_id }}/{{ agent_id }}.key"
+                            "certificateFile": "/etc/caddy/tls/agent-proxy.crt",
+                            "keyFile": "/etc/caddy/tls/agent-proxy.key"
                         }
                     ]
                 }

@@ -5,8 +5,9 @@
     "api": {
         "tag": "api",
         "listen": "127.0.0.1:10087",
-        "services": ["HandlerService"]
+        "services": ["HandlerService", "StatsService"]
     },
+    "stats": {},
     "inbounds": [
         {
             "tag": "tcp-vless",

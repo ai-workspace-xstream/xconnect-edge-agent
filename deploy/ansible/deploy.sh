@@ -1,6 +1,6 @@
 #!/bin/bash
 # xconnect-edge-agent 部署脚本
-# 使用方法: ./deploy.sh [--dns-only] [--deploy-only] [--prod|--inventory FILE]
+# 使用方法: ./deploy.sh [--dns-only] [--deploy-only] [--uat-shared|--uat-team|--prod|--inventory FILE]
 
 set -euo pipefail
 
@@ -22,6 +22,7 @@ DEPLOY_ONLY=false
 INVENTORY_FILE="$SCRIPT_DIR/inventory.ini"
 AGENT_VARS_FILE="$SCRIPT_DIR/vars/xconnect_edge_agent.yml"
 TARGET_ENVIRONMENT="inventory.ini"
+SKIP_DNS=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -39,6 +40,20 @@ while [[ $# -gt 0 ]]; do
             TARGET_ENVIRONMENT="production"
             shift
             ;;
+        --uat-shared)
+            INVENTORY_FILE="$SCRIPT_DIR/inventory.uat-shared.ini"
+            AGENT_VARS_FILE="$SCRIPT_DIR/vars/xconnect_edge_agent.uat-shared.yml"
+            TARGET_ENVIRONMENT="uat-shared"
+            SKIP_DNS=true
+            shift
+            ;;
+        --uat-team)
+            INVENTORY_FILE="$SCRIPT_DIR/inventory.uat-team.ini"
+            AGENT_VARS_FILE="$SCRIPT_DIR/vars/xconnect_edge_agent.uat-team.yml"
+            TARGET_ENVIRONMENT="uat-team"
+            SKIP_DNS=true
+            shift
+            ;;
         --inventory)
             if [ $# -lt 2 ]; then
                 echo "错误: --inventory 需要一个文件路径"
@@ -50,7 +65,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "未知参数: $1"
-            echo "使用方法: $0 [--dns-only] [--deploy-only] [--prod|--inventory FILE]"
+            echo "使用方法: $0 [--dns-only] [--deploy-only] [--uat-shared|--uat-team|--prod|--inventory FILE]"
             exit 1
             ;;
     esac
@@ -83,6 +98,9 @@ echo "Inventory: $INVENTORY_FILE"
 echo "Vars: $AGENT_VARS_FILE"
 echo "目标主机: $HOST_ALIAS ($HOST)"
 echo "前提: 目标主机必须已通过 scripts/setup-proxy.sh 完成 xray/xray-tcp/caddy 预配置"
+if [ "$SKIP_DNS" = true ]; then
+    echo "DNS: UAT target 不声明或修改 Cloudflare DNS；仅执行 agent 部署"
+fi
 echo ""
 
 # 进入 ansible 目录
@@ -91,9 +109,9 @@ export ANSIBLE_CONFIG="$SCRIPT_DIR/ansible.cfg"
 export AGENT_VARS_FILE
 
 # 步骤 1: 更新 DNS
-if [ "$DEPLOY_ONLY" = false ]; then
+if [ "$DEPLOY_ONLY" = false ] && [ "$SKIP_DNS" = false ]; then
     echo "=== 步骤 1/2: 更新 DNS 记录 ==="
-    if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+    if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
         echo "错误: CLOUDFLARE_API_TOKEN 未设置"
         echo "请导出环境变量: export CLOUDFLARE_API_TOKEN=xxx"
         exit 1
@@ -111,7 +129,7 @@ fi
 
 # 步骤 2: 部署 agent
 echo "=== 步骤 2/2: 部署 xconnect-edge-agent ==="
-if [ -z "$INTERNAL_SERVICE_TOKEN" ]; then
+if [ -z "${INTERNAL_SERVICE_TOKEN:-}" ]; then
     echo "错误: INTERNAL_SERVICE_TOKEN 未设置"
     echo "请导出环境变量: export INTERNAL_SERVICE_TOKEN=xxx"
     exit 1

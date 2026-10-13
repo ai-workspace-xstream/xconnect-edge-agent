@@ -1,0 +1,10 @@
+# UAT Agent Server team edition.
+# The token remains runtime-only in INTERNAL_SERVICE_TOKEN.
+agent_id: "agent-server-team-uat"
+agent_controller_url: "https://accounts-uat.onwalk.net"
+agent_role: "agent-proxy"
+xray_enabled: true
+xray_sync_interval: "10m"
+agent_log_level: "info"
+xray_exporter_enabled: false
+cloudflare_dns_records: []

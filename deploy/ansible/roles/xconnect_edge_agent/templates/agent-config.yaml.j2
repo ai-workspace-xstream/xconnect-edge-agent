@@ -6,6 +6,7 @@ log:
 agent:
   role: "{{ agent_role }}"
   id: "{{ agent_id }}"
+  domain: "{{ agent_id }}"
   nodeId: "{{ agent_node_id }}"
   region: {{ agent_region | to_json }}
   pool: {{ agent_pool | to_json }}

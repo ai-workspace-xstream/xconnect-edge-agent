@@ -54,5 +54,6 @@ const defaultTemplate = `{
         "outboundTag": "blocked"
       }
     ]
-  }
+  },
+  "stats": {}
 }`
