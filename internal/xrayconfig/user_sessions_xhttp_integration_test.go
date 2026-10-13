@@ -4,9 +4,17 @@ package xrayconfig
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
 	wirebinary "encoding/binary"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"io"
+	"math/big"
 	"net"
 	"os"
 	"os/exec"
@@ -20,13 +28,13 @@ func TestExtendedXrayXHTTPSessionIsolation(t *testing.T) {
 	if binary == "" {
 		t.Skip("XRAY_SESSION_TEST_BINARY required")
 	}
-	for _, mode := range []string{"packet-up", "stream-up", "tcp-mux"} {
+	for _, mode := range []string{"packet-up", "stream-up", "tcp-mux", "tcp-vision"} {
 		t.Run(mode, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			start := func(name string, config map[string]interface{}, port int) {
 				t.Helper()
-				config["log"] = map[string]interface{}{"loglevel": "debug"}
+				config["log"] = map[string]interface{}{"loglevel": "warning"}
 				payload, _ := json.Marshal(config)
 				path := filepath.Join(t.TempDir(), name+".json")
 				if err := os.WriteFile(path, payload, 0600); err != nil {
@@ -61,8 +69,38 @@ func TestExtendedXrayXHTTPSessionIsolation(t *testing.T) {
 			serverPort, apiPort := freeTCPPort(t), freeTCPPort(t)
 			server := map[string]interface{}{"api": map[string]interface{}{"listen": "127.0.0.1:" + itoa(apiPort), "services": []string{"HandlerService"}}, "inbounds": []interface{}{map[string]interface{}{"tag": "test-vless", "listen": "127.0.0.1", "port": serverPort, "protocol": "vless", "settings": map[string]interface{}{"decryption": "none", "clients": []interface{}{map[string]interface{}{"id": a.ID, "email": a.Email}, map[string]interface{}{"id": b.ID, "email": b.Email}}}, "streamSettings": map[string]interface{}{"network": "xhttp", "xhttpSettings": map[string]interface{}{"path": "/session-test", "mode": "auto"}}}}, "outbounds": []interface{}{map[string]interface{}{"protocol": "freedom"}}}
 			server["api"].(map[string]interface{})["tag"] = "api"
-			if mode == "tcp-mux" {
+			if mode == "tcp-mux" || mode == "tcp-vision" {
 				server["inbounds"].([]interface{})[0].(map[string]interface{})["streamSettings"] = map[string]interface{}{"network": "tcp"}
+			}
+			certPin := ""
+			if mode == "tcp-vision" {
+				key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cert := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"localhost"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+				der, err := x509.CreateCertificate(rand.Reader, cert, cert, &key.PublicKey, key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				hash := sha256.Sum256(der)
+				certPin = hex.EncodeToString(hash[:])
+				keyDER, err := x509.MarshalPKCS8PrivateKey(key)
+				if err != nil {
+					t.Fatal(err)
+				}
+				certPath, keyPath := filepath.Join(t.TempDir(), "cert.pem"), filepath.Join(t.TempDir(), "key.pem")
+				if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}), 0600); err != nil {
+					t.Fatal(err)
+				}
+				in := server["inbounds"].([]interface{})[0].(map[string]interface{})
+				for _, user := range in["settings"].(map[string]interface{})["clients"].([]interface{}) {
+					user.(map[string]interface{})["flow"] = "xtls-rprx-vision"
+				}
+				in["streamSettings"] = map[string]interface{}{"network": "tcp", "security": "tls", "tlsSettings": map[string]interface{}{"minVersion": "1.3", "certificates": []interface{}{map[string]interface{}{"certificateFile": certPath, "keyFile": keyPath}}}}
 			}
 			start("server", server, apiPort)
 			client := func(u Client) int {
@@ -72,6 +110,10 @@ func TestExtendedXrayXHTTPSessionIsolation(t *testing.T) {
 				out["mux"].(map[string]interface{})["enabled"] = mode == "tcp-mux"
 				if mode == "tcp-mux" {
 					out["streamSettings"] = map[string]interface{}{"network": "tcp"}
+				}
+				if mode == "tcp-vision" {
+					out["streamSettings"] = map[string]interface{}{"network": "tcp", "security": "tls", "tlsSettings": map[string]interface{}{"serverName": "localhost", "pinnedPeerCertSha256": certPin, "fingerprint": "chrome"}}
+					out["settings"].(map[string]interface{})["vnext"].([]interface{})[0].(map[string]interface{})["users"].([]interface{})[0].(map[string]interface{})["flow"] = "xtls-rprx-vision"
 				}
 				start(u.Email, config, port)
 				return port
