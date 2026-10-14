@@ -24,6 +24,9 @@ CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
 AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
+XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"
+XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"
+XRAY_RELEASE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases"
 VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
 VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
 VAULT_TLS_CERT_FIELD="${VAULT_TLS_CERT_FIELD:-tls_fullchain_pem_b64}"
@@ -429,6 +432,63 @@ detect_goarch() {
     esac
 }
 
+install_xray_from_maintained_fork() {
+    local goarch="$1"
+    local asset_pattern
+    local api_url="${XRAY_RELEASE_API_BASE}/tags/${XRAY_RELEASE_TAG}"
+    local tmp_dir
+    local release_json
+    local asset_url
+
+    case "$goarch" in
+        amd64) asset_pattern='^[Xx][Rr]ay-linux-64\.zip' ;;
+        arm64) asset_pattern='^[Xx][Rr]ay-linux-arm64-v8a\.zip' ;;
+        *) echo -e "${RED}Unsupported Xray architecture: ${goarch}${NC}" >&2; return 1 ;;
+    esac
+
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo -e "${RED}unzip is required to install Xray from the maintained fork.${NC}" >&2
+        return 1
+    fi
+
+    tmp_dir="$(mktemp -d /tmp/xray-release.XXXXXX)"
+    trap 'rm -rf "${tmp_dir}"' RETURN
+    echo "Resolving Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
+    release_json="$(curl -fsSL --retry 3 --connect-timeout 10 "${api_url}")" || {
+        echo -e "${RED}Unable to resolve Xray release ${XRAY_RELEASE_TAG} from ${XRAY_REPO}.${NC}" >&2
+        return 1
+    }
+    asset_url="$(printf '%s' "${release_json}" | python3 -c '
+import json, re, sys
+data = json.load(sys.stdin)
+pattern = re.compile(sys.argv[1])
+for asset in data.get("assets", []):
+    if pattern.fullmatch(asset.get("name", "")):
+        print(asset.get("browser_download_url", ""))
+        break
+' "${asset_pattern}")"
+    if [ -z "${asset_url}" ]; then
+        echo -e "${RED}Maintained fork release is missing the expected Xray asset for ${goarch}.${NC}" >&2
+        return 1
+    fi
+
+    curl -fsSL --retry 3 --connect-timeout 10 "${asset_url}" -o "${tmp_dir}/xray.zip"
+    unzip -q "${tmp_dir}/xray.zip" -d "${tmp_dir}/extracted"
+    if [ ! -f "${tmp_dir}/extracted/xray" ]; then
+        echo -e "${RED}Maintained fork asset does not contain the xray executable.${NC}" >&2
+        return 1
+    fi
+
+    install -d -m 0755 /usr/local/bin /usr/local/share/xray
+    install -m 0755 "${tmp_dir}/extracted/xray" /usr/local/bin/xray
+    for asset in geoip.dat geosite.dat; do
+        if [ -f "${tmp_dir}/extracted/${asset}" ]; then
+            install -m 0644 "${tmp_dir}/extracted/${asset}" "/usr/local/share/xray/${asset}"
+        fi
+    done
+    echo -e "${GREEN}Installed Xray ${XRAY_RELEASE_TAG} from ${XRAY_REPO}.${NC}"
+}
+
 resolve_release_download_url() {
     local asset_name="$1"
     if [ "${AGENT_RELEASE_TAG}" = "latest" ]; then
@@ -790,6 +850,8 @@ Env (optional):
   AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
   AGENT_POOL                  # logical pool identifier within the region
+  XRAY_REPO=ai-workspace-xstream/Xray-core
+  XRAY_RELEASE_TAG=v26.3.27  # maintained fork release; no upstream fallback
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
@@ -1012,12 +1074,12 @@ if [ "$UPGRADE_ONLY" = true ]; then
     echo -e "${YELLOW}[1/7] Upgrade mode: skipping apt dependency install.${NC}"
 else
     echo -e "${GREEN}[1/7] Updating system and installing dependencies...${NC}"
-    apt-get update && apt-get install -y python3 curl wget git socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
+    apt-get update && apt-get install -y python3 curl wget git unzip socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
 fi
 
-# 2. Xray Installation
+# 2. Xray Installation from the maintained fork
 echo -e "${GREEN}[2/7] Installing Xray...${NC}"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+install_xray_from_maintained_fork "$(detect_goarch)"
 
 # 3. Runtime Bundle Installation
 echo -e "${GREEN}[3/7] Installing prebuilt runtime bundle (custom Caddy + xconnect-edge-agent)...${NC}"
