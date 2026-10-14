@@ -13,6 +13,15 @@
 
 ---
 
+## 📑 目录
+
+- [项目定位](#-项目定位)
+- [核心能力](#-核心能力)
+- [部署模式](#-部署模式)
+- [快速开始](#-快速开始)
+- [相关项目与资源](#-相关项目与资源)
+- [扩展阅读：高级部署与运维](#-扩展阅读高级部署与运维)
+
 ## 📡 项目定位
 
 XConnect Edge Agent 是运行在代理节点上的控制代理：向 [accounts](https://github.com/ai-workspace-services/accounts) 认证，接收用户和节点配置，在本机管理 Xray，并上报心跳与健康状态。Caddy 负责 HTTPS/TLS 和入口反向代理。
@@ -97,6 +106,13 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 <summary>📚 扩展阅读：高级部署与运维</summary>
 
 以下内容面向平台运维和私有化部署场景；普通用户只需完成上面的快速开始。
+
+高级章节索引：
+
+- [Accounts 服务对接部署](#-与-accounts-服务对接部署)
+- [常用进阶参数与配置](#️-常用进阶参数与配置)
+- [边缘与容器化部署](#️-边缘与容器化部署cloudflare--cloud-run)
+- [常见问题排查](#-常见问题排查faq)
 
 ---
 
