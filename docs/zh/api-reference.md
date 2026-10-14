@@ -205,7 +205,7 @@ main
 - 作用：定义一个 Xray 配置输出目标。
 - 参数：无。
 - 返回：无。
-- 调用时机 / 约束：每个 target 最终都会对应一个 `xrayconfig.PeriodicSyncer`。
+- 调用时机 / 约束：所有 target 由同一个 `xrayconfig.PeriodicSyncer` 基于同一份控制面快照同步；`RestartCommand` 相同的 target 视为同一服务。
 - 关联关系：用于 `XraySync.Targets`。
 
 | 字段 | 类型 | 含义 |
@@ -213,8 +213,8 @@ main
 | `Name` | `string` | 日志中使用的逻辑目标名。 |
 | `OutputPath` | `string` | 目标配置文件输出路径。 |
 | `TemplatePath` | `string` | 可选 JSON 模板路径。 |
-| `ValidateCommand` | `[]string` | 渲染后、重启前执行的校验命令。 |
-| `RestartCommand` | `[]string` | 校验成功后执行的重启命令。 |
+| `ValidateCommand` | `[]string` | 候选配置替换现有文件前的校验命令。须包含 `{config}` 或输出路径，运行时替换为输出文件同目录下的候选文件（`.<name>.candidate-*.json`）。校验失败保留现有文件、权限与已应用状态，不重启。示例：`["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]`。 |
+| `RestartCommand` | `[]string` | 候选配置提交后重新加载 Xray。共享该命令的 target 一起提交、只重启一次。重启失败时恢复上次成功加载的配置并再次执行该命令，错误中说明恢复是否成功。 |
 | `DynamicUsers` | `DynamicUserSync` | 可选的本机 Xray HandlerService 配置；纯新增在线生效。移除客户端时，每轮 reconciliation 仅重启该 target 的 Xray 一次，因为 HandlerService 无法关闭已建立的会话；不会重启 Caddy。 |
 
 #### `Load`
@@ -526,7 +526,7 @@ main
 - 作用：为同步流程提供活跃客户端列表的接口契约。
 - 参数：无。
 - 返回：无。
-- 调用时机 / 约束：每次同步都应返回完整的活跃客户端集合。
+- 调用时机 / 约束：每次同步都应返回完整的活跃客户端集合。同时实现 `SnapshotSource` 的来源会一并返回同一次响应中的 clients、控制面 tuning 和 revision，所有 target 都基于这份快照渲染。
 - 关联关系：由 `agentmode.HTTPClientSource` 实现；由 `PeriodicSyncer` 消费。
 
 #### `PeriodicOptions`
@@ -537,7 +537,7 @@ main
 - 参数：无。
 - 返回：无。
 - 调用时机 / 约束：
-  - `Source`、`Generator.OutputPath` 与正数 `Interval` 为必填。
+  - `Source`、正数 `Interval` 以及每个 target 的输出路径为必填，输出路径不可重复。
   - `Runner` 可选；为空时默认用基于 `exec.CommandContext` 的命令执行器。
 - 关联关系：由 `NewPeriodicSyncer` 消费。
 
@@ -546,9 +546,11 @@ main
 | `Logger` | `*slog.Logger` | 同步活动日志器。 |
 | `Interval` | `time.Duration` | 同步周期。 |
 | `Source` | `ClientSource` | 每轮同步的客户端提供者。 |
-| `Generator` | `Generator` | 配置渲染与写入器。 |
-| `ValidateCommand` | `[]string` | 可选校验命令。 |
-| `RestartCommand` | `[]string` | 可选重启命令。 |
+| `Targets` | `[]Target` | 每份快照要渲染的配置文件。 |
+| `Generator` | `Generator` | 单目标写法，`Targets` 为空时使用。 |
+| `ValidateCommand` | `[]string` | 单目标校验命令。 |
+| `RestartCommand` | `[]string` | 单目标重启命令。 |
+| `LocalTuning` | `*ServerTuning` | 来自 agent 配置的 tuning，单独校验；有效的控制面字段会覆盖它。 |
 | `Runner` | `commandRunner` | 可选命令执行器覆盖。 |
 | `OnSync` | `func(SyncResult)` | 每轮同步后触发的可选回调。 |
 
@@ -560,6 +562,15 @@ main
 - 参数：无。
 - 返回：无。
 - 调用时机 / 约束：内部状态封装，应通过 `NewPeriodicSyncer` 构造。
+- 同步流程：
+  1. 为所有 target 拉取同一份快照（clients、控制面 tuning、revision）。
+  2. 本地与控制面 tuning 分别校验，再用有效的控制面字段按字段覆盖本地值。
+  3. 渲染每个 target；与上次已应用结果相同的 target 不做任何操作。
+  4. 把有变化的 target 写成同目录候选文件并执行 `ValidateCommand`。同一服务内任一失败则整组不提交，其他服务继续。
+  5. 以原子重命名替换现有文件。
+  6. 首次同步、调参变化或无法撤销会话的移除需要重启时重启该服务；否则通过 HandlerService 新增或撤销用户。
+  7. 重启失败时恢复 Xray 上次成功加载的配置，再次执行重启命令，并同时报告两次结果。
+- agent 重启后的首次同步：若现有文件与渲染结果一致，且同目录 `.<name>.applied` 记录了该配置的哈希，则不重启 Xray；没有该记录时会重启一次。
 - 关联关系：协调 `ClientSource`、`Generator` 与 shell 命令。
 
 #### `SyncResult`
@@ -642,7 +653,7 @@ main
 - 返回：
   - `*PeriodicSyncer`：初始化后的 syncer。
   - `error`：缺少必需依赖或 interval/output path 非法。
-- 调用时机 / 约束：拒绝 nil `Source`、空 `Generator.OutputPath`、非正数 `Interval`。
+- 调用时机 / 约束：拒绝 nil `Source`、空或重复的输出路径、既不含 `{config}` 也不含输出路径的校验命令，以及非正数 `Interval`。
 - 关联关系：由 `agentmode.Run` 调用。
 
 #### `(*PeriodicSyncer) Start`
@@ -743,13 +754,14 @@ main
   - 非 `200` 响应会转成错误
   - `404` 在当前实现里会被视为 endpoint unavailable，以保留 retry/fallback 模式
 - 可选字段 `tuning`：节点级 Xray 运行参数，按白名单校验，超出范围的字段会被丢弃并记录警告；其他字段一律忽略。
-  - 优先级：控制面 `tuning` > 本地 `xray.sync.tuning` > 模板原值。控制面不再下发时回落到本地配置。
-  - 生效方式：参数变化后会重写配置并执行该目标的 `restartCommand`；未配置重启命令时只写入文件，下次 Xray 重启后生效。
+  - 优先级：控制面 `tuning` > 本地 `xray.sync.tuning` > 模板原值。本地与控制面 tuning 先分别校验再按字段覆盖：控制面字段非法或撤销时回落到本地值，再回落到模板。
+  - 生效方式：参数变化后先校验候选配置，再提交并执行该目标的 `restartCommand`；未配置重启命令时只写入文件，下次 Xray 重启后生效。
+  - 生效时机：每轮同步都拉取完整响应并比较渲染结果，因此即使 `revision` 不变，调参变化也会在最长 30 秒的兜底同步内生效。控制面应把有效 tuning 计入 `revision` 和 user-config 事件，使变化立即触发同步。
 
 | 字段 | 范围 | 写入位置 |
 | --- | --- | --- |
 | `logLevel` | `debug` / `info` / `warning` / `error` / `none` | `log.loglevel` |
-| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize`（arm64 默认仅 4 KB，amd64 为 512 KB） |
+| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize`：每个连接的缓冲容量（arm64 默认 4 KB，amd64 为 512 KB）。它不是内存上限；调大可能提高吞吐，也会提高繁忙连接的最坏内存占用，需按并发压测结果决定 |
 | `connIdleSeconds` | 10–3600 | `policy.levels.0.connIdle` |
 | `handshakeSeconds` | 1–60 | `policy.levels.0.handshake` |
 | `uplinkOnlySeconds` | 0–60 | `policy.levels.0.uplinkOnly` |

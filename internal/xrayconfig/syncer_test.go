@@ -150,7 +150,7 @@ func TestPeriodicSyncerHotAddsAndRestartsXrayOnceForRemoval(t *testing.T) {
 	if got := adder.calls[len(adder.calls)-1]; !reflect.DeepEqual(got, []Client{third}) {
 		t.Fatalf("paused client was included in later dynamic update: %#v", got)
 	}
-	rendered, err := os.ReadFile(syncer.generator.OutputPath)
+	rendered, err := os.ReadFile(syncer.targets[0].Generator.OutputPath)
 	if err != nil {
 		t.Fatalf("read rendered config: %v", err)
 	}
@@ -197,18 +197,29 @@ func TestPeriodicSyncerRetriesFailedRemovalRestart(t *testing.T) {
 	if _, err := syncer.sync(context.Background()); err != nil {
 		t.Fatalf("bootstrap sync: %v", err)
 	}
-	committedHash := syncer.lastHash
-	source.clients = []Client{second}
-	if _, err := syncer.sync(context.Background()); err == nil {
-		t.Fatal("expected removal restart failure")
+	committedHash := syncer.targets[0].lastHash
+	outputPath := syncer.targets[0].Generator.OutputPath
+	applied, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := syncer.lastHash; got != committedHash {
+	source.clients = []Client{second}
+	_, err = syncer.sync(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "previous config restored and xray restarted") {
+		t.Fatalf("expected a reported recovery after the failed restart, got %v", err)
+	}
+	if got := syncer.targets[0].lastHash; got != committedHash {
 		t.Fatalf("failed withdrawal changed committed hash: got %q, want %q", got, committedHash)
+	}
+	if restored, _ := os.ReadFile(outputPath); string(restored) != string(applied) {
+		t.Fatal("failed restart did not restore the last applied config")
 	}
 	if _, err := syncer.sync(context.Background()); err != nil {
 		t.Fatalf("retry removal: %v", err)
 	}
-	if restarts.Load() != 3 { // initial start, failed withdrawal, successful retry
+	// Initial start, failed withdrawal, recovery restart with the restored
+	// config, successful retry.
+	if restarts.Load() != 4 {
 		t.Fatalf("unexpected restart attempts: %d", restarts.Load())
 	}
 }

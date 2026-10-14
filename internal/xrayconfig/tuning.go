@@ -12,8 +12,11 @@ import (
 type ServerTuning struct {
 	// LogLevel replaces log.loglevel: debug, info, warning, error or none.
 	LogLevel string `json:"logLevel,omitempty" yaml:"logLevel"`
-	// BufferSizeKB sets policy.levels.0.bufferSize. Without it Xray uses 4 KB
-	// per connection on arm64 (for example AWS t4g) and 512 KB on amd64.
+	// BufferSizeKB sets policy.levels.0.bufferSize: how much each connection
+	// may buffer between inbound and outbound. Without it Xray uses 4 KB on
+	// arm64 (for example AWS t4g) and 512 KB on amd64. It is a capacity, not
+	// a memory limit: a larger value can raise throughput and also raises the
+	// worst-case memory of busy connections, so choose it from a load test.
 	BufferSizeKB *int `json:"bufferSizeKB,omitempty" yaml:"bufferSizeKB"`
 	// The four timeouts below set policy.levels.0, in seconds.
 	ConnIdleSeconds     *int `json:"connIdleSeconds,omitempty" yaml:"connIdleSeconds"`

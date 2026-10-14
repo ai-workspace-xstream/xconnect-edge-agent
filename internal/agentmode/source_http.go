@@ -23,12 +23,12 @@ func NewHTTPClientSource(client *Client, tracker *syncTracker) *HTTPClientSource
 	return &HTTPClientSource{client: client, tracker: tracker}
 }
 
-// ListClients implements xrayconfig.ClientSource by fetching the latest client
-// list via the controller API.
-func (s *HTTPClientSource) ListClients(ctx context.Context) ([]xrayconfig.Client, error) {
+// FetchSnapshot implements xrayconfig.SnapshotSource: the clients, tuning and
+// revision all come from one controller response.
+func (s *HTTPClientSource) FetchSnapshot(ctx context.Context) (xrayconfig.Snapshot, error) {
 	resp, err := s.client.ListClients(ctx)
 	if err != nil {
-		return nil, err
+		return xrayconfig.Snapshot{}, err
 	}
 	if s.tracker != nil {
 		s.tracker.UpdateFetch(len(resp.Clients), resp.Revision, time.Now().UTC())
@@ -36,7 +36,17 @@ func (s *HTTPClientSource) ListClients(ctx context.Context) ([]xrayconfig.Client
 	s.mu.Lock()
 	s.tuning = resp.Tuning
 	s.mu.Unlock()
-	return resp.Clients, nil
+	return xrayconfig.Snapshot{Clients: resp.Clients, Tuning: resp.Tuning, Revision: resp.Revision}, nil
+}
+
+// ListClients implements xrayconfig.ClientSource by fetching the latest client
+// list via the controller API.
+func (s *HTTPClientSource) ListClients(ctx context.Context) ([]xrayconfig.Client, error) {
+	snapshot, err := s.FetchSnapshot(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return snapshot.Clients, nil
 }
 
 // ServerTuning implements xrayconfig.TuningSource with the tuning from the
