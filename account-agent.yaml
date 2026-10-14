@@ -33,7 +33,7 @@ xray:
       - name: "xhttp"
         outputPath: "/usr/local/etc/xray/config.json"
         templatePath: "config/xray.xhttp.template.json"
-        validateCommand: []
+        validateCommand: ["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]
         restartCommand:
           - "systemctl"
           - "restart"
@@ -45,7 +45,7 @@ xray:
       - name: "tcp"
         outputPath: "/usr/local/etc/xray/tcp-config.json"
         templatePath: "config/xray.tcp.template.json"
-        validateCommand: []
+        validateCommand: ["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]
         restartCommand:
           - "systemctl"
           - "restart"

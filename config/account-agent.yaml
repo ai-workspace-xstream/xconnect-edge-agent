@@ -32,9 +32,12 @@ xray:
     interval: 10m
     # Optional runtime tuning for every target. Controller-sent tuning overrides
     # these field by field; a change restarts Xray via restartCommand.
+    # bufferSizeKB is the per-connection relay buffer capacity, not a memory
+    # cap: raising it can raise throughput and worst-case memory. Pick a value
+    # only after a concurrent load test (throughput, RSS, CPU, upload failures).
     # tuning:
     #   logLevel: warning
-    #   bufferSizeKB: 512           # arm64 (e.g. AWS t4g) otherwise uses 4 KB
+    #   bufferSizeKB: 512           # JP ARM64 (e.g. AWS t4g) baseline, in KiB
     #   connIdleSeconds: 300
     #   xhttpScMaxEachPostBytes: 1000000
     targets:
@@ -42,6 +45,8 @@ xray:
       - name: "xhttp"
         outputPath: "/usr/local/etc/xray/config.json"
         templatePath: "/usr/local/etc/xray/templates/xray.xhttp.template.json"
+        # Sidecar mode: no xray binary in this container. With xray on the
+        # host, use ["/usr/local/bin/xray", "run", "-test", "-config", "{config}"].
         validateCommand: []
         restartCommand: [] # Sidecar mode uses shared volume, no systemctl
 

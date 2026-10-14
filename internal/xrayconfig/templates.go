@@ -55,5 +55,12 @@ const defaultTemplate = `{
       }
     ]
   },
+  "policy": {
+    "levels": {
+      "0": {
+        "bufferSize": 512
+      }
+    }
+  },
   "stats": {}
 }`

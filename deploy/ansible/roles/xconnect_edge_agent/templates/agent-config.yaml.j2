@@ -34,11 +34,18 @@ xray:
   sync:
     enabled: true
     interval: {{ xray_sync_interval }}
+{% if xray_sync_tuning %}
+    tuning: {{ xray_sync_tuning | to_json }}
+{% endif %}
     targets:
       - name: "xhttp"
         outputPath: "{{ xray_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.xhttp.template.json"
+{% if xray_validate_enabled %}
+        validateCommand: ["{{ xray_executable }}", "run", "-test", "-config", "{config}"]
+{% else %}
         validateCommand: []
+{% endif %}
         restartCommand:
           - "systemctl"
           - "restart"
@@ -50,7 +57,11 @@ xray:
       - name: "tcp"
         outputPath: "{{ xray_tcp_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.tcp.template.json"
+{% if xray_validate_enabled %}
+        validateCommand: ["{{ xray_executable }}", "run", "-test", "-config", "{config}"]
+{% else %}
         validateCommand: []
+{% endif %}
         restartCommand:
           - "systemctl"
           - "restart"
