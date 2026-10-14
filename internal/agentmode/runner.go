@@ -137,10 +137,10 @@ func Run(ctx context.Context, opts Options) error {
 			})
 		}
 
-		stopFuncs = make([]func(context.Context) error, 0, len(targets))
-		syncers = make([]*xrayconfig.PeriodicSyncer, 0, len(targets))
-
-		// Start a syncer for each Agent Proxy target.
+		// One syncer renders every Agent Proxy target from the same
+		// controller snapshot, so clients, tuning and revision never differ
+		// between targets within a reconciliation.
+		syncTargets := make([]xrayconfig.Target, 0, len(targets))
 		for _, target := range targets {
 			outputPath := strings.TrimSpace(target.OutputPath)
 			if outputPath == "" {
@@ -174,17 +174,23 @@ func Run(ctx context.Context, opts Options) error {
 				}
 			}
 
-			syncLogger := logger.With("component", "agent-xray-sync", "target", target.Name)
-			syncer, err := xrayconfig.NewPeriodicSyncer(xrayconfig.PeriodicOptions{
-				Logger:          syncLogger,
-				Interval:        userConfigSyncInterval,
-				Source:          source,
+			syncTargets = append(syncTargets, xrayconfig.Target{
+				Name:            target.Name,
 				Generator:       generator,
 				ValidateCommand: target.ValidateCommand,
 				RestartCommand:  target.RestartCommand,
 				UserAdder:       userAdder,
 				UserRevoker:     userRevoker,
-				LocalTuning:     opts.Xray.Sync.Tuning,
+			})
+		}
+
+		if len(syncTargets) > 0 {
+			syncer, err := xrayconfig.NewPeriodicSyncer(xrayconfig.PeriodicOptions{
+				Logger:      logger.With("component", "agent-xray-sync"),
+				Interval:    userConfigSyncInterval,
+				Source:      source,
+				Targets:     syncTargets,
+				LocalTuning: opts.Xray.Sync.Tuning,
 				OnSync: func(result xrayconfig.SyncResult) {
 					if result.Error != nil {
 						tracker.MarkError(result.Error, result.CompletedAt)
@@ -199,10 +205,6 @@ func Run(ctx context.Context, opts Options) error {
 
 			stopSync, err := syncer.Start(ctx)
 			if err != nil {
-				// Clean up already started syncers
-				for _, stop := range stopFuncs {
-					_ = stop(context.Background())
-				}
 				return err
 			}
 			stopFuncs = append(stopFuncs, stopSync)

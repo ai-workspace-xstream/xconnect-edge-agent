@@ -61,15 +61,18 @@ func (g Generator) Generate(clients []Client) error {
 		return err
 	}
 
-	mode := g.FileMode
-	if mode == 0 {
-		mode = 0o644
-	}
-	if err := atomicWriteFile(g.OutputPath, buf, mode); err != nil {
+	if err := atomicWriteFile(g.OutputPath, buf, g.fileMode()); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 
 	return nil
+}
+
+func (g Generator) fileMode() fs.FileMode {
+	if g.FileMode == 0 {
+		return 0o644
+	}
+	return g.FileMode
 }
 
 // Render returns the rendered configuration JSON without writing it to disk.
