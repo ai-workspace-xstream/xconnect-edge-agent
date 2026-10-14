@@ -123,3 +123,23 @@ func TestSetupProxyBootstrapsVaultTLSBeforeCaddyValidation(t *testing.T) {
 		t.Fatal("expected exactly one Vault TLS bootstrap call")
 	}
 }
+
+func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
+	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptBytes)
+	for _, required := range []string{
+		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
+		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"`,
+		"install_xray_from_maintained_fork",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("missing maintained Xray fork contract: %s", required)
+		}
+	}
+	if strings.Contains(script, "XTLS/Xray-install") || strings.Contains(script, "github.com/XTLS/Xray") {
+		t.Fatal("setup script must not fall back to the upstream Xray installer")
+	}
+}

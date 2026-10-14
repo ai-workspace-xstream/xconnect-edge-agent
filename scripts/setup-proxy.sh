@@ -24,6 +24,9 @@ CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
 AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
+XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"
+XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"
+XRAY_RELEASE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases"
 VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
 VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
 VAULT_TLS_CERT_FIELD="${VAULT_TLS_CERT_FIELD:-tls_fullchain_pem_b64}"
@@ -429,6 +432,19 @@ detect_goarch() {
     esac
 }
 
+install_xray_from_maintained_fork() {
+    local goarch="$1"
+    local installer="${REPO_SOURCE_DIR}/scripts/vendor/xray-install/install-release.sh"
+    if [ ! -x "${installer}" ]; then
+        echo -e "${RED}Vendored Xray installer is missing: ${installer}${NC}" >&2
+        return 1
+    fi
+    echo "Installing Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
+    XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
+        XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
+        bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
+}
+
 resolve_release_download_url() {
     local asset_name="$1"
     if [ "${AGENT_RELEASE_TAG}" = "latest" ]; then
@@ -790,6 +806,8 @@ Env (optional):
   AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
   AGENT_POOL                  # logical pool identifier within the region
+  XRAY_REPO=ai-workspace-xstream/Xray-core
+  XRAY_RELEASE_TAG=v26.3.27  # maintained fork release; no upstream fallback
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
@@ -1007,17 +1025,19 @@ if is_truthy "$INSTALL_OBSERVABILITY"; then
     fi
 fi
 
+REPO_SOURCE_DIR="$(fetch_repo_archive)"
+
 # 1. System Update & Dependencies
 if [ "$UPGRADE_ONLY" = true ]; then
     echo -e "${YELLOW}[1/7] Upgrade mode: skipping apt dependency install.${NC}"
 else
     echo -e "${GREEN}[1/7] Updating system and installing dependencies...${NC}"
-    apt-get update && apt-get install -y python3 curl wget git socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
+    apt-get update && apt-get install -y python3 curl wget git unzip socat build-essential debian-keyring debian-archive-keyring apt-transport-https dnsutils
 fi
 
-# 2. Xray Installation
+# 2. Xray Installation from the maintained fork
 echo -e "${GREEN}[2/7] Installing Xray...${NC}"
-bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+install_xray_from_maintained_fork "$(detect_goarch)"
 
 # 3. Runtime Bundle Installation
 echo -e "${GREEN}[3/7] Installing prebuilt runtime bundle (custom Caddy + xconnect-edge-agent)...${NC}"
@@ -1159,8 +1179,6 @@ for stale in /etc/caddy/conf.d/postgresql-postgresql-*.caddy; do
     [ -e "$stale" ] || continue
     rm -f "$stale" || true
 done
-
-REPO_SOURCE_DIR="$(fetch_repo_archive)"
 
 # Stop both names during migration so an existing installation cannot report
 # the same node from two agent processes after the service rename.
