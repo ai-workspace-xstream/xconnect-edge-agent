@@ -32,6 +32,28 @@ func TestLoadAcceptsSupportedRoles(t *testing.T) {
 	}
 }
 
+func TestLoadReadsLocalXrayTuning(t *testing.T) {
+	cfg, err := LoadReader(strings.NewReader(`mode: agent
+agent:
+  controllerUrl: https://accounts.example.test
+  apiToken: token
+xray:
+  sync:
+    enabled: true
+    tuning:
+      logLevel: warning
+      bufferSizeKB: 512
+      xhttpScMaxEachPostBytes: 2097152
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tuning := cfg.Xray.Sync.Tuning
+	if tuning == nil || tuning.LogLevel != "warning" || *tuning.BufferSizeKB != 512 || *tuning.XHTTPMaxEachPostBytes != 2097152 {
+		t.Fatalf("local tuning not decoded: %+v", tuning)
+	}
+}
+
 func TestLoadRejectsUnknownRole(t *testing.T) {
 	_, err := LoadReader(strings.NewReader(`mode: agent
 agent:

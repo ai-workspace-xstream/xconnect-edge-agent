@@ -15,6 +15,9 @@ type ClientListResponse struct {
 	Total       int                 `json:"total"`
 	GeneratedAt time.Time           `json:"generatedAt"`
 	Revision    string              `json:"revision,omitempty"`
+	// Tuning optionally adjusts allowlisted Xray runtime knobs on this node.
+	// Omitting it keeps the agent's local tuning and the template values.
+	Tuning *xrayconfig.ServerTuning `json:"tuning,omitempty"`
 }
 
 // StatusReport captures the runtime state of an agent and the managed Xray

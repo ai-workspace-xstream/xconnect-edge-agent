@@ -42,6 +42,10 @@ type Generator struct {
 
 	// Domain is the hostname used to interpolate templates (e.g. for cert paths).
 	Domain string
+
+	// Tuning overrides allowlisted runtime knobs after the template is
+	// rendered. Nil keeps the template unchanged.
+	Tuning *ServerTuning
 }
 
 // Generate writes a new Xray configuration with the provided clients. The base
@@ -122,6 +126,7 @@ func (g Generator) Render(clients []Client) ([]byte, error) {
 	if err := updateClients(root, clients); err != nil {
 		return nil, err
 	}
+	g.Tuning.apply(root)
 
 	finalBuf, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {

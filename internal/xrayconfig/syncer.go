@@ -18,6 +18,13 @@ type ClientSource interface {
 	ListClients(ctx context.Context) ([]Client, error)
 }
 
+// TuningSource is optionally implemented by a ClientSource that receives
+// controller-provided server tuning together with the client list. The value
+// reflects the most recent successful ListClients call.
+type TuningSource interface {
+	ServerTuning() *ServerTuning
+}
+
 type commandRunner func(ctx context.Context, cmd []string) ([]byte, error)
 
 // UserAdder adds clients to a running Xray instance without restarting it.
@@ -45,6 +52,9 @@ type PeriodicOptions struct {
 	UserAdder       UserAdder
 	UserRevoker     UserRevoker
 	OnSync          func(SyncResult)
+	// LocalTuning comes from the agent config. Controller tuning overrides it
+	// field by field.
+	LocalTuning *ServerTuning
 }
 
 // PeriodicSyncer periodically rebuilds the Xray configuration from the database.
@@ -59,12 +69,14 @@ type PeriodicSyncer struct {
 	userAdder       UserAdder
 	userRevoker     UserRevoker
 	onSync          func(SyncResult)
+	localTuning     *ServerTuning
 	trigger         chan struct{}
 
-	mu          sync.Mutex
-	syncMu      sync.Mutex
-	lastHash    string
-	lastClients []Client
+	mu            sync.Mutex
+	syncMu        sync.Mutex
+	lastHash      string
+	lastClients   []Client
+	lastTuningKey string
 }
 
 // SyncResult describes the outcome of a synchronization attempt.
@@ -105,8 +117,28 @@ func NewPeriodicSyncer(opts PeriodicOptions) (*PeriodicSyncer, error) {
 		userAdder:       opts.UserAdder,
 		userRevoker:     opts.UserRevoker,
 		onSync:          opts.OnSync,
+		localTuning:     opts.LocalTuning,
 		trigger:         make(chan struct{}, 1),
 	}, nil
+}
+
+// effectiveTuning overlays the controller tuning on the local tuning and drops
+// values outside the allowed ranges.
+func (s *PeriodicSyncer) effectiveTuning() *ServerTuning {
+	var remote *ServerTuning
+	if source, ok := s.source.(TuningSource); ok {
+		remote = source.ServerTuning()
+	}
+	tuning, rejected := s.localTuning.Overlay(remote).Normalize()
+	if len(rejected) > 0 {
+		s.mu.Lock()
+		changed := tuning.Key() != s.lastTuningKey
+		s.mu.Unlock()
+		if changed {
+			s.logger.Warn("ignoring out-of-range server tuning", "fields", rejected)
+		}
+	}
+	return tuning
 }
 
 // Trigger requests an immediate reconciliation. Multiple pending events are
@@ -198,7 +230,11 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("list clients: %w", err)
 	}
 
-	renderedBuf, err := s.generator.Render(clients)
+	generator := s.generator
+	generator.Tuning = s.effectiveTuning()
+	tuningKey := generator.Tuning.Key()
+
+	renderedBuf, err := generator.Render(clients)
 	if err != nil {
 		return 0, fmt.Errorf("render config: %w", err)
 	}
@@ -207,6 +243,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 
 	s.mu.Lock()
 	previousHash := s.lastHash
+	previousTuningKey := s.lastTuningKey
 	s.mu.Unlock()
 
 	if previousHash != "" && currentHash == previousHash {
@@ -215,7 +252,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		return len(clients), nil
 	}
 
-	if err := s.generator.Generate(clients); err != nil {
+	if err := generator.Generate(clients); err != nil {
 		return 0, fmt.Errorf("generate config: %w", err)
 	}
 
@@ -229,27 +266,38 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	// restart path. Pure additions use HandlerService. A removal must restart
 	// only this Xray target: RemoveUser only blocks future authentication and
 	// cannot terminate a session that has already authenticated.
+	// Tuning only takes effect when Xray reloads its config. A restart also
+	// covers any client additions or withdrawals in the same reconciliation.
 	s.mu.Lock()
 	previousClients := append([]Client(nil), s.lastClients...)
 	s.mu.Unlock()
+	tuningChanged := previousHash != "" && tuningKey != previousTuningKey
 	if previousHash == "" {
 		if len(s.restartCommand) > 0 {
 			if err := s.runCommand(ctx, s.restartCommand, "restart xray"); err != nil {
 				return 0, err
 			}
 		}
+	} else if tuningChanged && len(s.restartCommand) > 0 {
+		if err := s.runCommand(ctx, s.restartCommand, "restart xray after tuning change"); err != nil {
+			return 0, err
+		}
+		s.logger.Info("server tuning applied", "tuning", tuningKey)
 	} else {
+		if tuningChanged {
+			s.logger.Warn("server tuning written without a restart command; it applies on the next Xray restart")
+		}
 		added, removed := clientDelta(previousClients, clients)
 		if len(removed) > 0 {
 			if s.userRevoker != nil {
-				if err := s.userRevoker.RevokeUsers(ctx, s.generator, removed); err != nil {
+				if err := s.userRevoker.RevokeUsers(ctx, generator, removed); err != nil {
 					return 0, fmt.Errorf("revoke xray user sessions: %w", err)
 				}
 				if len(added) > 0 {
 					if s.userAdder == nil {
 						return 0, errors.New("dynamic user addition required after revocation")
 					}
-					if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
+					if err := s.userAdder.AddUsers(ctx, generator, added); err != nil {
 						return 0, err
 					}
 				}
@@ -265,7 +313,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 			if s.userAdder == nil {
 				return 0, errors.New("dynamic xray user addition is required for client restoration")
 			}
-			if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
+			if err := s.userAdder.AddUsers(ctx, generator, added); err != nil {
 				return 0, fmt.Errorf("add xray users: %w", err)
 			}
 		}
@@ -274,6 +322,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	s.mu.Lock()
 	s.lastHash = currentHash
 	s.lastClients = append([]Client(nil), clients...)
+	s.lastTuningKey = tuningKey
 	s.mu.Unlock()
 
 	return len(clients), nil
