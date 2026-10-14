@@ -40,17 +40,13 @@ export default {
       });
     }
 
-    // ── Container health/debug endpoints ──
+    // ── Container health endpoints ──
     if (url.pathname === "/container/healthz") {
       return container.fetch("http://container/healthz");
     }
 
     if (url.pathname === "/container/readyz") {
       return container.fetch("http://container/readyz");
-    }
-
-    if (url.pathname === "/container/debug/processes") {
-      return container.fetch("http://container/debug/processes");
     }
 
     // ── Default: forward ALL other requests to container ──

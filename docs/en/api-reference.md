@@ -196,6 +196,7 @@ This package defines the local runtime configuration model.
 | `TemplatePath` | `string` | Legacy single-target template path. |
 | `ValidateCommand` | `[]string` | Legacy single-target validation command. |
 | `RestartCommand` | `[]string` | Legacy single-target restart command. |
+| `Tuning` | `*xrayconfig.ServerTuning` | Local Xray runtime tuning applied to every target; controller `tuning` overrides it field by field. |
 
 #### `SyncTarget`
 
@@ -741,6 +742,22 @@ This section documents external HTTP interfaces. These are not Go interfaces.
 - Failure handling:
   - Non-`200` responses become errors
   - `404` is treated as endpoint unavailable in the current retry/fallback pattern
+- Optional `tuning` field: node-level Xray runtime knobs, validated against an allowlist. Out-of-range fields are dropped with a warning; unknown fields are ignored.
+  - Precedence: controller `tuning` > local `xray.sync.tuning` > template value. When the controller stops sending it, the local tuning applies again.
+  - Effect: a change rewrites the config and runs the target's `restartCommand`. Without a restart command the file is written and applies on the next Xray restart.
+
+| Field | Range | Written to |
+| --- | --- | --- |
+| `logLevel` | `debug` / `info` / `warning` / `error` / `none` | `log.loglevel` |
+| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize` (arm64 defaults to only 4 KB, amd64 to 512 KB) |
+| `connIdleSeconds` | 10–3600 | `policy.levels.0.connIdle` |
+| `handshakeSeconds` | 1–60 | `policy.levels.0.handshake` |
+| `uplinkOnlySeconds` | 0–60 | `policy.levels.0.uplinkOnly` |
+| `downlinkOnlySeconds` | 0–60 | `policy.levels.0.downlinkOnly` |
+| `xhttpScMaxEachPostBytes` | 65536–16777216 | `scMaxEachPostBytes` on XHTTP inbounds; must not be below the client upload chunk size |
+| `xhttpScMaxBufferedPosts` | 1–1000 | `scMaxBufferedPosts` on XHTTP inbounds |
+
+When an XHTTP inbound has `extra`, the knobs are written inside it, because Xray replaces every field except host, path and mode with `extra`.
 
 #### `POST /api/agent-server/v1/status`
 

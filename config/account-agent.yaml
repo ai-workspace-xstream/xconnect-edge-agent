@@ -30,6 +30,13 @@ xray:
   sync:
     enabled: true
     interval: 10m
+    # Optional runtime tuning for every target. Controller-sent tuning overrides
+    # these field by field; a change restarts Xray via restartCommand.
+    # tuning:
+    #   logLevel: warning
+    #   bufferSizeKB: 512           # arm64 (e.g. AWS t4g) otherwise uses 4 KB
+    #   connIdleSeconds: 300
+    #   xhttpScMaxEachPostBytes: 1000000
     targets:
       # XHTTP Transport Configuration
       - name: "xhttp"
