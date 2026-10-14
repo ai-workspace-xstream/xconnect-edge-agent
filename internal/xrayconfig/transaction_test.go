@@ -260,6 +260,24 @@ func TestSyncReportsFailedRecovery(t *testing.T) {
 	if readAppliedMarker(output) != "" {
 		t.Fatal("a failed recovery kept claiming xray runs a config")
 	}
+	log.fail = nil
+	source.set(Snapshot{Clients: []Client{alice}})
+	beforeRetry := log.count("restart")
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if log.count("restart") != beforeRetry+1 {
+		t.Fatal("controller reverted to last good config but no restart retried after failed recovery")
+	}
+	if readAppliedMarker(output) != sha256Hex([]byte(applied)) {
+		t.Fatal("successful retry did not record the restored config as loaded")
+	}
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if log.count("restart") != beforeRetry+1 {
+		t.Fatal("unchanged loaded config restarted again after recovery")
+	}
 }
 
 func TestAppliedMarkerRequiresProofThatXrayLoadedTheConfig(t *testing.T) {

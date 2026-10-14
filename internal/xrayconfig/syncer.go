@@ -455,7 +455,10 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 		hash:      sha256Hex(rendered),
 		tuningKey: tuning.Key(),
 	}
-	if t.lastHash != "" && c.hash == t.lastHash {
+	// A failed recovery clears loaded but keeps lastHash for the previous
+	// config. A controller rollback to that hash must retry the restart.
+	// File-only targets can still skip unchanged writes without load proof.
+	if t.lastHash != "" && c.hash == t.lastHash && (t.loaded || len(t.RestartCommand) == 0) {
 		t.logger.Info("xray config unchanged, skipping write and restart", "clients", len(clients), "hash", c.hash[:12])
 		return nil, nil
 	}
@@ -475,7 +478,7 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 	} else {
 		c.tuningChanged = c.tuningKey != t.lastTuningKey
 		c.added, c.removed = clientDelta(t.lastClients, clients)
-		c.needsRestart = c.tuningChanged || (len(c.removed) > 0 && t.UserRevoker == nil)
+		c.needsRestart = (!t.loaded && len(t.RestartCommand) > 0) || c.tuningChanged || (len(c.removed) > 0 && t.UserRevoker == nil)
 	}
 	// Restore the config Xray last loaded, falling back to what is on disk
 	// before this agent has applied anything.
