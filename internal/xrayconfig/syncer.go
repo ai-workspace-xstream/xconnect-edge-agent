@@ -124,6 +124,10 @@ type targetState struct {
 	// lastApplied is the config Xray last loaded successfully; nil until
 	// known. A failed restart restores it.
 	lastApplied []byte
+	// loaded is set while Xray is known to run lastHash: it restarted with
+	// that file, or HandlerService applied the change on top of a config it
+	// had loaded. Only then is the applied marker kept on disk.
+	loaded bool
 }
 
 // SyncResult describes the outcome of a synchronization attempt.
@@ -418,7 +422,7 @@ func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, cl
 			if c.tuningChanged {
 				c.target.logger.Info("server tuning applied", "tuning", c.tuningKey)
 			}
-			c.target.markApplied(c, clients)
+			c.target.markApplied(c, clients, true)
 		}
 		return nil
 	}
@@ -429,7 +433,9 @@ func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, cl
 			errs = append(errs, fmt.Errorf("target %s: %w", c.target.Name, err))
 			continue
 		}
-		c.target.markApplied(c, clients)
+		// Without a restart, Xray only runs the new config when it already
+		// ran the previous one and the change needed no reload.
+		c.target.markApplied(c, clients, c.target.loaded && !c.needsRestart)
 	}
 	return errors.Join(errs...)
 }
@@ -462,7 +468,7 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 		// adopted instead of restarting Xray for the same config.
 		if previous.exists && bytes.Equal(previous.data, rendered) && readAppliedMarker(generator.OutputPath) == c.hash {
 			t.logger.Info("xray already runs the desired config; no restart", "hash", c.hash[:12])
-			t.markApplied(c, clients)
+			t.markApplied(c, clients, true)
 			return nil, nil
 		}
 		c.needsRestart = true
@@ -514,15 +520,33 @@ func (s *PeriodicSyncer) prepare(ctx context.Context, c *change) error {
 }
 
 // recoverRestart puts back the configs Xray last loaded and restarts it
-// again, reporting whether the service recovered.
+// again, reporting whether the service recovered. A file the failed change
+// created, with no previous config behind it, is removed instead.
 func (s *PeriodicSyncer) recoverRestart(ctx context.Context, changes []*change, restartCommand []string, cause error) error {
+	// Until the recovery restart succeeds nothing proves what Xray runs.
+	for _, c := range changes {
+		c.target.setLoaded("")
+	}
 	if err := restoreAll(changes); err != nil {
 		s.logger.Error("restart failed and the previous xray config could not be restored", "restartErr", cause, "restoreErr", err)
 		return fmt.Errorf("%w; restore previous config: %v", cause, err)
 	}
+	restored := false
+	for _, c := range changes {
+		restored = restored || c.previous.exists
+	}
+	if !restored {
+		s.logger.Error("restart failed; there was no previous xray config, the new config was removed", "err", cause)
+		return fmt.Errorf("%w; no previous config, new config removed", cause)
+	}
 	if err := s.runCommand(ctx, restartCommand, "restart xray with the restored config"); err != nil {
 		s.logger.Error("restart failed; previous xray config restored but xray did not restart", "restartErr", cause, "recoveryErr", err)
 		return fmt.Errorf("%w; previous config restored, recovery restart failed: %v", cause, err)
+	}
+	for _, c := range changes {
+		if c.previous.exists {
+			c.target.setLoaded(sha256Hex(c.previous.data))
+		}
 	}
 	s.logger.Warn("restart failed; previous xray config restored and xray restarted", "err", cause)
 	return fmt.Errorf("%w; previous config restored and xray restarted", cause)
@@ -575,12 +599,29 @@ func (t *targetState) applyRuntime(ctx context.Context, c *change) error {
 	return nil
 }
 
-func (t *targetState) markApplied(c *change, clients []Client) {
+func (t *targetState) markApplied(c *change, clients []Client, loaded bool) {
 	t.lastHash = c.hash
 	t.lastClients = append([]Client(nil), clients...)
 	t.lastTuningKey = c.tuningKey
 	t.lastApplied = c.rendered
-	if err := writeAppliedMarker(t.Generator.OutputPath, c.hash); err != nil {
+	if loaded {
+		t.setLoaded(c.hash)
+	} else {
+		t.setLoaded("")
+	}
+}
+
+// setLoaded records the hash of the config Xray is known to run, or clears
+// the record when that is unknown.
+func (t *targetState) setLoaded(hash string) {
+	t.loaded = hash != "" && hash == t.lastHash
+	var err error
+	if hash == "" {
+		err = removeAppliedMarker(t.Generator.OutputPath)
+	} else {
+		err = writeAppliedMarker(t.Generator.OutputPath, hash)
+	}
+	if err != nil {
 		t.logger.Warn("record applied xray config", "err", err)
 	}
 }

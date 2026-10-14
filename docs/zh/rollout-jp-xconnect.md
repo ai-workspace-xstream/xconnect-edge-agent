@@ -57,6 +57,14 @@ GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/xconnect-edge-a
 sha256sum dist/xconnect-edge-agent-linux-arm64 | tee dist/SHA256SUMS
 ```
 
+在构建机用与节点相同版本的 Xray 运行端到端检查，全部 PASS 才继续：
+
+```sh
+XRAY=/path/to/xray tests/e2e/xray_upload/run.sh
+```
+
+它用真实 Xray 验证候选校验、重启失败恢复、agent 重启采用、首次部署失败清理，并经 XHTTP（stream-up、packet-up）上传 JPEG 校验完整性。
+
 不要使用仓库中 `deploy/ansible/roles/xconnect_edge_agent/files/` 下已提交的二进制，它不对应 `$SHA`。
 把二进制和 `SHA256SUMS` 传到节点 `/root/rollout-$TS/`，在节点上复核哈希。
 
@@ -82,7 +90,7 @@ cp -a "$(systemctl show -p FragmentPath --value xconnect-edge-agent)" "$B/"
    ```
 
 2. 模板：用 `diff` 比较节点模板与 `$SHA` 的 `config/xray.*.template.json`。
-   本次统一后的默认策略是 `loglevel: warning`、模板不设置 `bufferSize`。节点模板有现场修改时
+   本次统一后的默认策略是 `loglevel: warning`，XHTTP 模板保留 JP 节点现行的 `bufferSize: 512` 基线。节点模板有现场修改时
    （证书路径、地址、出站、路由、TLS）保留现场值，只同步日志级别；不确定的差异先停下确认。
 3. 不新增 `tuning`，保持现有运行参数。
 
@@ -150,7 +158,8 @@ systemctl start xconnect-edge-agent
 ## 9. 后续：bufferSizeKB 压测（单独审批）
 
 `bufferSizeKB` 是每个连接的缓冲容量，不是内存上限；调大可能提高上传吞吐，也会提高繁忙连接的
-最坏内存。按 4（arm64 默认）、64、128、512 逐档，通过本地 `xray.sync.tuning` 或控制面 tuning 下发，
+最坏内存。本次保持 JP 节点现行的 512 基线不变；之后以 512 为对照，按 4（arm64 上的 Xray 默认）、
+128、1024 等档位通过本地 `xray.sync.tuning` 或控制面 tuning 下发，
 每档在 5–10 个并发客户端下记录吞吐、xray RSS 与峰值、CPU、上传失败、重连次数，再决定采用值。
 上传分片限制按 Accounts 的跨端发布顺序调整：提高限制先改服务端再发客户端，降低限制先改客户端并处理旧缓存。
 

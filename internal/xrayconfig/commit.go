@@ -114,10 +114,15 @@ func commitCandidate(candidate, outputPath string) error {
 }
 
 // restoreFile puts a previous config back atomically with its original
-// permissions and ownership.
+// permissions and ownership. When there was no previous config, the file this
+// change created is removed so nothing of the failed change stays behind.
 func restoreFile(outputPath string, previous fileSnapshot) error {
 	if !previous.exists {
-		return errors.New("no previous config to restore")
+		if err := os.Remove(outputPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("remove new config: %w", err)
+		}
+		syncDir(filepath.Dir(outputPath))
+		return nil
 	}
 	if current, err := os.ReadFile(outputPath); err == nil && bytes.Equal(current, previous.data) {
 		return nil
@@ -140,9 +145,10 @@ func syncDir(dir string) {
 	}
 }
 
-// appliedMarkerPath records the hash of the config Xray last loaded
-// successfully, so an agent restart does not restart Xray for a config it
-// already runs.
+// appliedMarkerPath records the hash of the config Xray is known to run: it was
+// written only after Xray restarted with that file, or after HandlerService
+// applied a change on top of such a config. An agent restart then does not
+// restart Xray for a config it already runs.
 func appliedMarkerPath(outputPath string) string {
 	return filepath.Join(filepath.Dir(outputPath), "."+filepath.Base(outputPath)+".applied")
 }
@@ -157,4 +163,11 @@ func readAppliedMarker(outputPath string) string {
 
 func writeAppliedMarker(outputPath, hash string) error {
 	return atomicWriteFile(appliedMarkerPath(outputPath), []byte(hash+"\n"), 0o644)
+}
+
+func removeAppliedMarker(outputPath string) error {
+	if err := os.Remove(appliedMarkerPath(outputPath)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }

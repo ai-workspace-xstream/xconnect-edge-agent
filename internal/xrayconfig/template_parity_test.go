@@ -69,13 +69,15 @@ func TestShippedTemplatesShareOneDefaultPolicy(t *testing.T) {
 			if level := root["log"].(map[string]interface{})["loglevel"]; level != "warning" {
 				t.Errorf("%s logs at %v; production templates log at warning", name, level)
 			}
-			// bufferSize is connection buffer capacity, decided per node
-			// through tuning after a load test, never by a template.
-			if policy, ok := root["policy"].(map[string]interface{}); ok {
+			// XHTTP keeps the 512 KiB per-connection buffer the JP node runs
+			// as its baseline; changing it is a tuning decision backed by a
+			// load test, not a template edit.
+			if family == "xhttp" {
+				policy, _ := root["policy"].(map[string]interface{})
 				levels, _ := policy["levels"].(map[string]interface{})
 				level, _ := levels["0"].(map[string]interface{})
-				if _, set := level["bufferSize"]; set {
-					t.Errorf("%s sets policy bufferSize", name)
+				if level["bufferSize"] != float64(512) {
+					t.Errorf("%s lost the 512 KiB XHTTP buffer baseline: %v", name, level["bufferSize"])
 				}
 			}
 			encoded, _ := json.Marshal(root)

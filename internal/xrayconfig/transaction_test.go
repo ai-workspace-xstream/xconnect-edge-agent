@@ -222,10 +222,23 @@ func TestSyncReportsFailedRecovery(t *testing.T) {
 		RestartCommand: []string{"restart", "xray"},
 	}}, nil)
 
-	// First deploy: there is nothing to go back to.
+	// First deploy: there is nothing to go back to, so the new file goes
+	// and there is no point restarting again.
 	_, err := syncer.sync(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "no previous config to restore") {
+	if err == nil || !strings.Contains(err.Error(), "no previous config, new config removed") {
 		t.Fatalf("expected the missing previous config to be reported, got %v", err)
+	}
+	if _, statErr := os.Stat(output); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("the failed first deploy left its config behind: %v", statErr)
+	}
+	if leftovers := leftoverCandidates(t, dir); len(leftovers) != 0 {
+		t.Fatalf("candidate files left behind: %v", leftovers)
+	}
+	if log.count("restart xray") != 1 {
+		t.Fatalf("recovery restarted without any config to restore: %v", log.calls)
+	}
+	if readAppliedMarker(output) != "" {
+		t.Fatal("a failed first deploy recorded an applied config")
 	}
 
 	log.fail = nil
@@ -243,6 +256,73 @@ func TestSyncReportsFailedRecovery(t *testing.T) {
 	}
 	if readFile(t, output) != applied {
 		t.Fatal("the last applied config was not restored")
+	}
+	if readAppliedMarker(output) != "" {
+		t.Fatal("a failed recovery kept claiming xray runs a config")
+	}
+}
+
+func TestAppliedMarkerRequiresProofThatXrayLoadedTheConfig(t *testing.T) {
+	dir := t.TempDir()
+	output := filepath.Join(dir, "config.json")
+	noRestart := filepath.Join(dir, "sidecar.json")
+	source := &snapshotSource{snapshot: Snapshot{Clients: []Client{alice}}}
+	log := &commandLog{}
+	adder := &recordingUserAdder{}
+	syncer := newTestSyncer(t, source, log, []Target{
+		{Name: "xhttp", Generator: Generator{Definition: DefaultDefinition(), OutputPath: output}, RestartCommand: []string{"restart", "xray"}, UserAdder: adder},
+		{Name: "sidecar", Generator: Generator{Definition: DefaultDefinition(), OutputPath: noRestart}, UserAdder: adder},
+	}, nil)
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	if got := readAppliedMarker(output); got != syncer.targets[0].lastHash {
+		t.Fatalf("a successful restart must record the loaded config, got %q", got)
+	}
+	// Nothing proves that a target without a restart command loaded its file.
+	if readAppliedMarker(noRestart) != "" {
+		t.Fatal("marker written without a restart command")
+	}
+
+	// A HandlerService addition on top of a loaded config keeps the proof;
+	// the unproven target stays unproven.
+	source.set(Snapshot{Clients: []Client{alice, bob}})
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatalf("addition: %v", err)
+	}
+	if got := readAppliedMarker(output); got != syncer.targets[0].lastHash {
+		t.Fatalf("hot addition on a loaded config must move the marker, got %q", got)
+	}
+	if readAppliedMarker(noRestart) != "" {
+		t.Fatal("hot addition made an unproven config look loaded")
+	}
+
+	// A restarted agent therefore restarts Xray for the unproven target's
+	// service but adopts the proven one.
+	restarted := newTestSyncer(t, source, log, []Target{
+		{Name: "xhttp", Generator: Generator{Definition: DefaultDefinition(), OutputPath: output}, RestartCommand: []string{"restart", "xray"}},
+	}, nil)
+	if _, err := restarted.sync(context.Background()); err != nil {
+		t.Fatalf("agent restart: %v", err)
+	}
+	if log.count("restart xray") != 1 {
+		t.Fatalf("proven config restarted xray again: %d", log.count("restart xray"))
+	}
+
+	// A recovery restart records the config it actually restored.
+	applied := readFile(t, output)
+	log.fail = func(cmd []string) error {
+		if strings.Join(cmd, " ") == "restart xray" && log.count("restart xray") == 2 {
+			return errors.New("unit failed")
+		}
+		return nil
+	}
+	source.set(Snapshot{Clients: []Client{alice, bob}, Tuning: &ServerTuning{ConnIdleSeconds: intPtr(300)}})
+	if _, err := restarted.sync(context.Background()); err == nil {
+		t.Fatal("expected the restart to fail")
+	}
+	if readFile(t, output) != applied || readAppliedMarker(output) != sha256Hex([]byte(applied)) {
+		t.Fatal("the recovery restart must record the restored config")
 	}
 }
 

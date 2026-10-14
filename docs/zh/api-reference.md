@@ -214,7 +214,7 @@ main
 | `OutputPath` | `string` | 目标配置文件输出路径。 |
 | `TemplatePath` | `string` | 可选 JSON 模板路径。 |
 | `ValidateCommand` | `[]string` | 候选配置替换现有文件前的校验命令。须包含 `{config}` 或输出路径，运行时替换为输出文件同目录下的候选文件（`.<name>.candidate-*.json`）。校验失败保留现有文件、权限与已应用状态，不重启。示例：`["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]`。 |
-| `RestartCommand` | `[]string` | 候选配置提交后重新加载 Xray。共享该命令的 target 一起提交、只重启一次。重启失败时恢复上次成功加载的配置并再次执行该命令，错误中说明恢复是否成功。 |
+| `RestartCommand` | `[]string` | 候选配置提交后重新加载 Xray。共享该命令的 target 一起提交、只重启一次。重启失败时恢复上次成功加载的配置并再次执行该命令，错误中说明恢复是否成功；若该文件由本次变更新建、此前没有配置，则删除新文件，不再重启。 |
 | `DynamicUsers` | `DynamicUserSync` | 可选的本机 Xray HandlerService 配置；纯新增在线生效。移除客户端时，每轮 reconciliation 仅重启该 target 的 Xray 一次，因为 HandlerService 无法关闭已建立的会话；不会重启 Caddy。 |
 
 #### `Load`
@@ -569,8 +569,8 @@ main
   4. 把有变化的 target 写成同目录候选文件并执行 `ValidateCommand`。同一服务内任一失败则整组不提交，其他服务继续。
   5. 以原子重命名替换现有文件。
   6. 首次同步、调参变化或无法撤销会话的移除需要重启时重启该服务；否则通过 HandlerService 新增或撤销用户。
-  7. 重启失败时恢复 Xray 上次成功加载的配置，再次执行重启命令，并同时报告两次结果。
-- agent 重启后的首次同步：若现有文件与渲染结果一致，且同目录 `.<name>.applied` 记录了该配置的哈希，则不重启 Xray；没有该记录时会重启一次。
+  7. 重启失败时恢复 Xray 上次成功加载的配置，再次执行重启命令，并同时报告两次结果。首次部署且此前没有配置时，删除新文件，不执行恢复重启。
+- 每个文件旁的 `.<name>.applied` 记录 Xray 已确认运行的配置：仅在重启命令（含恢复重启）以该文件成功执行后，或 HandlerService 在这样的配置上成功应用变更后写入，其他情况会删除；未配置 `RestartCommand` 的 target 不会有该记录。agent 重启后的首次同步：若现有文件与渲染结果一致且记录匹配，则不重启 Xray；记录缺失或不匹配时重启一次。
 - 关联关系：协调 `ClientSource`、`Generator` 与 shell 命令。
 
 #### `SyncResult`
@@ -761,7 +761,7 @@ main
 | 字段 | 范围 | 写入位置 |
 | --- | --- | --- |
 | `logLevel` | `debug` / `info` / `warning` / `error` / `none` | `log.loglevel` |
-| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize`：每个连接的缓冲容量（arm64 默认 4 KB，amd64 为 512 KB）。它不是内存上限；调大可能提高吞吐，也会提高繁忙连接的最坏内存占用，需按并发压测结果决定 |
+| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize`：每个连接的缓冲容量（Xray 在 arm64 默认 4 KB、amd64 默认 512 KB；XHTTP 模板以 JP 节点现行的 512 为基线）。它不是内存上限；调大可能提高吞吐，也会提高繁忙连接的最坏内存占用，调整需以并发压测为依据 |
 | `connIdleSeconds` | 10–3600 | `policy.levels.0.connIdle` |
 | `handshakeSeconds` | 1–60 | `policy.levels.0.handshake` |
 | `uplinkOnlySeconds` | 0–60 | `policy.levels.0.uplinkOnly` |
