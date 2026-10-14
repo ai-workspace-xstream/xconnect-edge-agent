@@ -442,7 +442,7 @@ install_xray_from_maintained_fork() {
     echo "Installing Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
     XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
         XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
-        bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
+        bash "${installer}" install --version "${XRAY_RELEASE_TAG}"
 }
 
 resolve_release_download_url() {
