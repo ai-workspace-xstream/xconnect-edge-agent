@@ -100,8 +100,6 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 - [Platform Ops Toolkit 流水线](https://github.com/ai-workspace-infra/platform-ops-toolkit)
 - [架构与设计](docs/design.md)
 
----
-
 <details>
 <summary>📚 扩展阅读：高级部署与运维</summary>
 
@@ -442,4 +440,3 @@ XHTTP 基于 HTTP/3 与 HTTP/2 传输封装，在面对复杂的跨国网络抖�
 </details>
 
 </details>
-

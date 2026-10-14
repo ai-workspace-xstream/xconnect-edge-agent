@@ -75,16 +75,6 @@ func main() {
 		})
 	})
 
-	// Debug
-	mux.HandleFunc("/debug/processes", func(w http.ResponseWriter, _ *http.Request) {
-		processes := getProcesses(xrayPIDFile, xrayTCPPIDFile, agentPIDFile)
-		writeJSON(w, http.StatusOK, statusPayload{
-			OK:        (processes["xray"].Running || processes["xray-tcp"].Running) && processes["agent"].Running,
-			Time:      time.Now().UTC().Format(time.RFC3339),
-			Processes: processes,
-		})
-	})
-
 	// XHTTP proxy: /split/* → xray Unix socket (replaces Caddy reverse_proxy)
 	mux.HandleFunc("/split/", func(w http.ResponseWriter, r *http.Request) {
 		xrayProxy.ServeHTTP(w, r)

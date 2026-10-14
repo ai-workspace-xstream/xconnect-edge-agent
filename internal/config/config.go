@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
 type Config struct {
@@ -88,6 +90,9 @@ type XraySync struct {
 	Interval time.Duration `yaml:"interval"`
 	// Targets allows defining multiple Xray configuration files to sync.
 	Targets []SyncTarget `yaml:"targets"`
+	// Tuning adjusts allowlisted Xray runtime knobs on every target. Tuning
+	// from the controller overrides it field by field.
+	Tuning *xrayconfig.ServerTuning `yaml:"tuning"`
 
 	// Legacy fields for backward compatibility or simple single-target config
 	OutputPath      string   `yaml:"outputPath"`

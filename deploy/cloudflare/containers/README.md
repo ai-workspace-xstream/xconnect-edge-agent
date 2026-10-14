@@ -71,8 +71,7 @@ Health checks:
 
 ```bash
 curl -fsS http://127.0.0.1:8080/healthz       # Always OK
-curl -fsS http://127.0.0.1:8080/readyz         # OK when xray + agent running
-curl -fsS http://127.0.0.1:8080/debug/processes # Detailed process status
+curl -fsS http://127.0.0.1:8080/readyz         # OK when xray + agent running; includes per-process status
 ```
 
 ## Files
@@ -140,7 +139,7 @@ gcloud run services replace deploy/cloudflare/containers/cloud-run.service.yaml 
 
 ### Xray TCP not starting
 - Expected in Cloudflare Containers (no L4 ingress)
-- Check `/debug/processes` — XHTTP xray should still be running
+- Check `/readyz` — XHTTP xray should still be running
 - For TCP transport, deploy on VM or K8s instead
 
 ### Build fails

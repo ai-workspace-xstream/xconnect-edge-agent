@@ -196,6 +196,7 @@ main
 | `TemplatePath` | `string` | 兼容模式下的单目标模板路径。 |
 | `ValidateCommand` | `[]string` | 兼容模式下的单目标校验命令。 |
 | `RestartCommand` | `[]string` | 兼容模式下的单目标重启命令。 |
+| `Tuning` | `*xrayconfig.ServerTuning` | 本地 Xray 运行参数调优，作用于所有目标；控制面下发的 `tuning` 按字段覆盖。 |
 
 #### `SyncTarget`
 
@@ -741,6 +742,22 @@ main
 - 失败处理：
   - 非 `200` 响应会转成错误
   - `404` 在当前实现里会被视为 endpoint unavailable，以保留 retry/fallback 模式
+- 可选字段 `tuning`：节点级 Xray 运行参数，按白名单校验，超出范围的字段会被丢弃并记录警告；其他字段一律忽略。
+  - 优先级：控制面 `tuning` > 本地 `xray.sync.tuning` > 模板原值。控制面不再下发时回落到本地配置。
+  - 生效方式：参数变化后会重写配置并执行该目标的 `restartCommand`；未配置重启命令时只写入文件，下次 Xray 重启后生效。
+
+| 字段 | 范围 | 写入位置 |
+| --- | --- | --- |
+| `logLevel` | `debug` / `info` / `warning` / `error` / `none` | `log.loglevel` |
+| `bufferSizeKB` | 0–4096 | `policy.levels.0.bufferSize`（arm64 默认仅 4 KB，amd64 为 512 KB） |
+| `connIdleSeconds` | 10–3600 | `policy.levels.0.connIdle` |
+| `handshakeSeconds` | 1–60 | `policy.levels.0.handshake` |
+| `uplinkOnlySeconds` | 0–60 | `policy.levels.0.uplinkOnly` |
+| `downlinkOnlySeconds` | 0–60 | `policy.levels.0.downlinkOnly` |
+| `xhttpScMaxEachPostBytes` | 65536–16777216 | XHTTP 入站的 `scMaxEachPostBytes`，不得小于客户端上传分片大小 |
+| `xhttpScMaxBufferedPosts` | 1–1000 | XHTTP 入站的 `scMaxBufferedPosts` |
+
+XHTTP 入站存在 `extra` 时，参数写入 `extra`，因为 Xray 会用 `extra` 取代 host、path、mode 以外的字段。
 
 #### `POST /api/agent-server/v1/status`
 

@@ -4,3 +4,10 @@ deploy/cloudflare/workers/node_modules/
 deploy/cloudflare/workers/.wrangler/
 deploy/cloudflare/containers/node_modules/
 deploy/cloudflare/containers/.wrangler/
+
+# Build outputs, deploy bundles and local logs never belong in the repo:
+# bundles carry deploy.env with controller credentials.
+/xconnect-edge-agent
+/agent-svc-plus-*.tar.gz
+*.log
+deploy.env

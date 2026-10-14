@@ -1,6 +1,6 @@
 {
     "log": {
-        "loglevel": "debug"
+        "loglevel": "warning"
     },
     "api": {
         "tag": "api",
@@ -52,6 +52,13 @@
                 "outboundTag": "blocked"
             }
         ]
+    },
+    "policy": {
+        "levels": {
+            "0": {
+                "bufferSize": 512
+            }
+        }
     },
     "stats": {}
 }

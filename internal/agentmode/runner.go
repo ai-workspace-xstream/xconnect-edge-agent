@@ -184,6 +184,7 @@ func Run(ctx context.Context, opts Options) error {
 				RestartCommand:  target.RestartCommand,
 				UserAdder:       userAdder,
 				UserRevoker:     userRevoker,
+				LocalTuning:     opts.Xray.Sync.Tuning,
 				OnSync: func(result xrayconfig.SyncResult) {
 					if result.Error != nil {
 						tracker.MarkError(result.Error, result.CompletedAt)
