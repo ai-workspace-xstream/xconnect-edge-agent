@@ -13,6 +13,15 @@
 
 ---
 
+## 📑 目录
+
+- [项目定位](#-项目定位)
+- [核心能力](#-核心能力)
+- [部署模式](#-部署模式)
+- [快速开始](#-快速开始)
+- [相关项目与资源](#-相关项目与资源)
+- [扩展阅读：高级部署与运维](#-扩展阅读高级部署与运维)
+
 ## 📡 项目定位
 
 XConnect Edge Agent 是运行在代理节点上的控制代理：向 [accounts](https://github.com/ai-workspace-services/accounts) 认证，接收用户和节点配置，在本机管理 Xray，并上报心跳与健康状态。Caddy 负责 HTTPS/TLS 和入口反向代理。
@@ -91,9 +100,17 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 - [Platform Ops Toolkit 流水线](https://github.com/ai-workspace-infra/platform-ops-toolkit)
 - [架构与设计](docs/design.md)
 
----
+<details>
+<summary>📚 扩展阅读：高级部署与运维</summary>
 
-## ⚙️ 高级部署与运维
+以下内容面向平台运维和私有化部署场景；普通用户只需完成上面的快速开始。
+
+高级章节索引：
+
+- [Accounts 服务对接部署](#-与-accounts-服务对接部署)
+- [常用进阶参数与配置](#️-常用进阶参数与配置)
+- [边缘与容器化部署](#️-边缘与容器化部署cloudflare--cloud-run)
+- [常见问题排查](#-常见问题排查faq)
 
 ---
 
@@ -422,3 +439,4 @@ journalctl -u xconnect-edge-agent -n 50 --no-pager
 XHTTP 基于 HTTP/3 与 HTTP/2 传输封装，在面对复杂的跨国网络抖动与封锁环境时，具有更高的抗丢包能力与更佳的多路复用性能，特别适合 AI 交互（如 Cursor 流式代码补全、Claude/ChatGPT 长上下文流式对话）等低延迟敏感型场景。
 </details>
 
+</details>
