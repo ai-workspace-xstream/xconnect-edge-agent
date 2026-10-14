@@ -434,59 +434,15 @@ detect_goarch() {
 
 install_xray_from_maintained_fork() {
     local goarch="$1"
-    local asset_pattern
-    local api_url="${XRAY_RELEASE_API_BASE}/tags/${XRAY_RELEASE_TAG}"
-    local tmp_dir
-    local release_json
-    local asset_url
-
-    case "$goarch" in
-        amd64) asset_pattern='^[Xx][Rr]ay-linux-64\.zip' ;;
-        arm64) asset_pattern='^[Xx][Rr]ay-linux-arm64-v8a\.zip' ;;
-        *) echo -e "${RED}Unsupported Xray architecture: ${goarch}${NC}" >&2; return 1 ;;
-    esac
-
-    if ! command -v unzip >/dev/null 2>&1; then
-        echo -e "${RED}unzip is required to install Xray from the maintained fork.${NC}" >&2
+    local installer="${REPO_SOURCE_DIR}/scripts/vendor/xray-install/install-release.sh"
+    if [ ! -x "${installer}" ]; then
+        echo -e "${RED}Vendored Xray installer is missing: ${installer}${NC}" >&2
         return 1
     fi
-
-    tmp_dir="$(mktemp -d /tmp/xray-release.XXXXXX)"
-    trap 'rm -rf "${tmp_dir}"' RETURN
-    echo "Resolving Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
-    release_json="$(curl -fsSL --retry 3 --connect-timeout 10 "${api_url}")" || {
-        echo -e "${RED}Unable to resolve Xray release ${XRAY_RELEASE_TAG} from ${XRAY_REPO}.${NC}" >&2
-        return 1
-    }
-    asset_url="$(printf '%s' "${release_json}" | python3 -c '
-import json, re, sys
-data = json.load(sys.stdin)
-pattern = re.compile(sys.argv[1])
-for asset in data.get("assets", []):
-    if pattern.fullmatch(asset.get("name", "")):
-        print(asset.get("browser_download_url", ""))
-        break
-' "${asset_pattern}")"
-    if [ -z "${asset_url}" ]; then
-        echo -e "${RED}Maintained fork release is missing the expected Xray asset for ${goarch}.${NC}" >&2
-        return 1
-    fi
-
-    curl -fsSL --retry 3 --connect-timeout 10 "${asset_url}" -o "${tmp_dir}/xray.zip"
-    unzip -q "${tmp_dir}/xray.zip" -d "${tmp_dir}/extracted"
-    if [ ! -f "${tmp_dir}/extracted/xray" ]; then
-        echo -e "${RED}Maintained fork asset does not contain the xray executable.${NC}" >&2
-        return 1
-    fi
-
-    install -d -m 0755 /usr/local/bin /usr/local/share/xray
-    install -m 0755 "${tmp_dir}/extracted/xray" /usr/local/bin/xray
-    for asset in geoip.dat geosite.dat; do
-        if [ -f "${tmp_dir}/extracted/${asset}" ]; then
-            install -m 0644 "${tmp_dir}/extracted/${asset}" "/usr/local/share/xray/${asset}"
-        fi
-    done
-    echo -e "${GREEN}Installed Xray ${XRAY_RELEASE_TAG} from ${XRAY_REPO}.${NC}"
+    echo "Installing Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
+    XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
+        XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
+        bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
 }
 
 resolve_release_download_url() {
@@ -1069,6 +1025,8 @@ if is_truthy "$INSTALL_OBSERVABILITY"; then
     fi
 fi
 
+REPO_SOURCE_DIR="$(fetch_repo_archive)"
+
 # 1. System Update & Dependencies
 if [ "$UPGRADE_ONLY" = true ]; then
     echo -e "${YELLOW}[1/7] Upgrade mode: skipping apt dependency install.${NC}"
@@ -1221,8 +1179,6 @@ for stale in /etc/caddy/conf.d/postgresql-postgresql-*.caddy; do
     [ -e "$stale" ] || continue
     rm -f "$stale" || true
 done
-
-REPO_SOURCE_DIR="$(fetch_repo_archive)"
 
 # Stop both names during migration so an existing installation cannot report
 # the same node from two agent processes after the service rename.
