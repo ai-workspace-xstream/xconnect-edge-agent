@@ -6,7 +6,7 @@ func DefaultDefinition() Definition {
 
 const defaultTemplate = `{
   "log": {
-    "loglevel": "info"
+    "loglevel": "warning"
   },
   "api": {
     "tag": "api",
