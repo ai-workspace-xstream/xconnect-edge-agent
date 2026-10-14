@@ -93,7 +93,10 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 
 ---
 
-## ⚙️ 高级部署与运维
+<details>
+<summary>📚 扩展阅读：高级部署与运维</summary>
+
+以下内容面向平台运维和私有化部署场景；普通用户只需完成上面的快速开始。
 
 ---
 
@@ -420,5 +423,7 @@ journalctl -u xconnect-edge-agent -n 50 --no-pager
 <summary><strong>Q3: 为什么推荐使用 XHTTP 协议？</strong></summary>
 
 XHTTP 基于 HTTP/3 与 HTTP/2 传输封装，在面对复杂的跨国网络抖动与封锁环境时，具有更高的抗丢包能力与更佳的多路复用性能，特别适合 AI 交互（如 Cursor 流式代码补全、Claude/ChatGPT 长上下文流式对话）等低延迟敏感型场景。
+</details>
+
 </details>
 
