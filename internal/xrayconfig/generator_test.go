@@ -45,6 +45,21 @@ func TestGeneratorRenderUsesEmailAsStatsKey(t *testing.T) {
 	}
 }
 
+func TestGeneratorRenderUsesReadableJSON(t *testing.T) {
+	generator := Generator{Definition: DefaultDefinition()}
+
+	buf, err := generator.Render(nil)
+	if err != nil {
+		t.Fatalf("render config: %v", err)
+	}
+	if !strings.Contains(string(buf), "\n  \"log\"") {
+		t.Fatalf("expected indented JSON output, got %q", string(buf[:min(len(buf), 80)]))
+	}
+	if !strings.HasSuffix(string(buf), "\n") {
+		t.Fatal("expected rendered config to end with a newline")
+	}
+}
+
 func TestDefaultDefinitionEnablesStatsService(t *testing.T) {
 	rendered, err := (Generator{}).Render(nil)
 	if err != nil {

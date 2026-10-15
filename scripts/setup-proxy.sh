@@ -1130,7 +1130,23 @@ render_xray_config_from_template() {
     local output_path="$2"
     local uuid_value="$3"
 
-    sed "s|{{ UUID }}|${uuid_value}|g" "$template_path" > "$output_path"
+    # Keep the deployed Xray document readable even when an older template is
+    # still present on a host.  Parse after interpolation and write canonical
+    # indented JSON so `cat`/incident inspection remains useful.  Passing the
+    # values as argv avoids shell interpolation of a UUID or a path.
+    python3 - "$template_path" "$output_path" "$uuid_value" <<'PY'
+import json
+import pathlib
+import sys
+
+template_path, output_path, uuid_value = sys.argv[1:]
+raw = pathlib.Path(template_path).read_text(encoding="utf-8")
+document = json.loads(raw.replace("{{ UUID }}", uuid_value))
+pathlib.Path(output_path).write_text(
+    json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+)
+PY
 }
 
 print_standalone_links() {
