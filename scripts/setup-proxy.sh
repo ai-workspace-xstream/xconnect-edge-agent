@@ -34,8 +34,12 @@ VAULT_TLS_KEY_FIELD="${VAULT_TLS_KEY_FIELD:-tls_key_pem_b64}"
 
 update_agent_metadata() {
     local file="$1" key="$2" value="$3" temporary
+    if [ -z "$value" ] && [ "$key" != teamId ] && [ "$key" != resourceClass ]; then
+        echo "Agent $key must not be empty." >&2
+        return 1
+    fi
     case "$value" in
-        ""|*[!a-zA-Z0-9._-]*)
+        *[!a-zA-Z0-9._-]*)
             echo "Agent $key must use letters, digits, dots, underscores or hyphens." >&2
             return 1
             ;;
@@ -805,6 +809,8 @@ Env (optional):
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
+  AGENT_RESOURCE_CLASS        # shared (single public node), free, plus, or team
+  AGENT_TEAM_ID               # required only for team; enrolled tenant ID
   AGENT_POOL                  # logical pool identifier within the region
   XRAY_REPO=ai-workspace-xstream/Xray-core
   XRAY_RELEASE_TAG=v26.3.27  # maintained fork release; no upstream fallback
@@ -1250,6 +1256,12 @@ if [ "$STANDALONE_MODE" != true ]; then
     fi
     if [ -n "${AGENT_POOL:-}" ]; then
         update_agent_metadata /etc/agent/account-agent.yaml pool "$AGENT_POOL"
+    fi
+    if [ "${AGENT_RESOURCE_CLASS+x}" = x ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml resourceClass "$AGENT_RESOURCE_CLASS"
+    fi
+    if [ "${AGENT_TEAM_ID+x}" = x ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml teamId "$AGENT_TEAM_ID"
     fi
     # JSON strings are valid YAML strings and safely preserve token punctuation.
     AGENT_PROXY_DOMAIN="$DOMAIN" AUTH_URL="$AUTH_URL" INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" python3 - <<'PY_CONFIG'

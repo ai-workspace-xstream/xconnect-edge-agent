@@ -6,11 +6,15 @@ import (
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
-// ClientListResponse represents the payload returned by the controller when an
-// agent requests the latest set of Xray clients.
-//
-// Refactored for xconnect-edge-agent to avoid cross-module dependency on account.
+// UserScope is the controller-authorized audience, not a client-supplied claim.
+type UserScope struct {
+	ResourceClass string `json:"resourceClass"`
+	TeamID        string `json:"teamId,omitempty"`
+}
+
+// ClientListResponse is the controller snapshot admitted before Xray synchronization.
 type ClientListResponse struct {
+	Scope       *UserScope          `json:"scope,omitempty"`
 	Clients     []xrayconfig.Client `json:"clients"`
 	Total       int                 `json:"total"`
 	GeneratedAt time.Time           `json:"generatedAt"`
@@ -36,22 +40,24 @@ type StatusReport struct {
 
 // XrayStatus describes the synchronisation state of the managed Xray process.
 type XrayStatus struct {
-	Running      bool       `json:"running"`
-	Clients      int        `json:"clients"`
-	LastSync     *time.Time `json:"lastSync,omitempty"`
-	ConfigHash   string     `json:"configHash,omitempty"`
-	NodeID       string     `json:"nodeId,omitempty"`
-	NetworkID    string     `json:"networkId,omitempty"`
-	Region       string     `json:"region,omitempty"`
-	Pool         string     `json:"pool,omitempty"`
-	EntryPoint   string     `json:"entryPoint,omitempty"`
-	OpenToUsers  *bool      `json:"openToUsers,omitempty"`
-	Provider     string     `json:"provider,omitempty"`
-	Product      string     `json:"product,omitempty"`
-	LineCode     string     `json:"lineCode,omitempty"`
-	PricingGroup string     `json:"pricingGroup,omitempty"`
-	StatsEnabled bool       `json:"statsEnabled"`
-	XrayRevision string     `json:"xrayRevision,omitempty"`
+	ResourceClass string     `json:"resourceClass,omitempty"`
+	TeamID        string     `json:"teamId,omitempty"`
+	Running       bool       `json:"running"`
+	Clients       int        `json:"clients"`
+	LastSync      *time.Time `json:"lastSync,omitempty"`
+	ConfigHash    string     `json:"configHash,omitempty"`
+	NodeID        string     `json:"nodeId,omitempty"`
+	NetworkID     string     `json:"networkId,omitempty"`
+	Region        string     `json:"region,omitempty"`
+	Pool          string     `json:"pool,omitempty"`
+	EntryPoint    string     `json:"entryPoint,omitempty"`
+	OpenToUsers   *bool      `json:"openToUsers,omitempty"`
+	Provider      string     `json:"provider,omitempty"`
+	Product       string     `json:"product,omitempty"`
+	LineCode      string     `json:"lineCode,omitempty"`
+	PricingGroup  string     `json:"pricingGroup,omitempty"`
+	StatsEnabled  bool       `json:"statsEnabled"`
+	XrayRevision  string     `json:"xrayRevision,omitempty"`
 }
 
 // OverlayStatus is non-secret telemetry, never enrollment or routing authority.

@@ -43,6 +43,9 @@ func Run(ctx context.Context, opts Options) error {
 	if token == "" {
 		return errors.New("agent.apiToken is required")
 	}
+	if err := opts.Agent.ValidateUserScope(); err != nil {
+		return err
+	}
 	if err := opts.Agent.ValidateRole(); err != nil {
 		return err
 	}
@@ -95,6 +98,8 @@ func Run(ctx context.Context, opts Options) error {
 		InsecureSkipVerify: opts.Agent.TLS.InsecureSkipVerify,
 		UserAgent:          buildUserAgent(opts.Agent.ID),
 		AgentID:            opts.Agent.ID,
+		ResourceClass:      opts.Agent.ResourceClass,
+		TeamID:             opts.Agent.TeamID,
 	})
 	if err != nil {
 		return err
@@ -362,8 +367,10 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 		Users:        snapshot.Clients,
 		SyncRevision: snapshot.Revision,
 		Xray: agentproto.XrayStatus{
-			Running: running,
-			Clients: snapshot.Clients,
+			ResourceClass: agent.ResourceClass,
+			TeamID:        agent.TeamID,
+			Running:       running,
+			Clients:       snapshot.Clients,
 			LastSync: func() *time.Time {
 				if lastSyncPtr == nil {
 					return nil
