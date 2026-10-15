@@ -13,6 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/telemetry"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // ClientSource provides the list of active Xray clients to encode in the config.
@@ -329,14 +335,26 @@ func (s *PeriodicSyncer) fetch(ctx context.Context) (Snapshot, error) {
 // sync renders every target from one snapshot. Each target computes its own
 // change; targets sharing a restart command are validated, committed and
 // restarted together. A failing group does not block the others.
-func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
+func (s *PeriodicSyncer) sync(ctx context.Context) (count int, syncErr error) {
+	ctx, span := otel.Tracer("github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig").Start(ctx, "xconnect.agent.config_sync")
+	started := time.Now()
+	defer span.End()
+	defer func() { telemetry.RecordSync(ctx, time.Since(started), syncErr) }()
+	span.SetAttributes(attribute.String("xconnect.component", "agent"))
+	defer func() {
+		span.SetAttributes(attribute.Int64("xconnect.sync.duration_ms", time.Since(started).Milliseconds()))
+	}()
+
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 
 	snapshot, err := s.fetch(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "controller snapshot failed")
 		return 0, fmt.Errorf("list clients: %w", err)
 	}
+	span.SetAttributes(attribute.Int("xconnect.sync.client_count", len(snapshot.Clients)))
 	clients := snapshot.Clients
 	tuning := s.effectiveTuning(snapshot.Tuning)
 
@@ -347,6 +365,8 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "configuration reconciliation failed")
 		return 0, err
 	}
 	return len(clients), nil
@@ -661,8 +681,31 @@ func (s *PeriodicSyncer) notify(result SyncResult) {
 }
 
 func (s *PeriodicSyncer) runCommand(ctx context.Context, cmd []string, action string) error {
+	operation := "xconnect.agent.command"
+	if strings.Contains(strings.ToLower(action), "restart xray") {
+		operation = "xconnect.agent.xray_restart"
+	}
+	ctx, span := otel.Tracer("github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig").Start(ctx, operation)
+	started := time.Now()
+	defer span.End()
+	if operation == "xconnect.agent.xray_restart" {
+		span.AddEvent("restart.begin")
+	}
+	span.SetAttributes(
+		attribute.String("xconnect.command.action", action),
+		attribute.Int("xconnect.command.arg_count", len(cmd)),
+	)
+	defer func() {
+		span.SetAttributes(attribute.Int64("xconnect.command.duration_ms", time.Since(started).Milliseconds()))
+	}()
 	output, err := s.runner(ctx, cmd)
+	if operation == "xconnect.agent.xray_restart" {
+		telemetry.RecordRestart(ctx, time.Since(started), err)
+		span.AddEvent("restart.end", trace.WithAttributes(attribute.String("outcome", map[bool]string{true: "error", false: "success"}[err != nil])))
+	}
 	if err != nil {
+		span.RecordError(errors.New("command execution failed"))
+		span.SetStatus(codes.Error, "command execution failed")
 		if len(output) > 0 {
 			return fmt.Errorf("%s: %w: %s", action, err, strings.TrimSpace(string(output)))
 		}
