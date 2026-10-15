@@ -7,6 +7,9 @@ agent:
   # Set these per deployment, e.g. region: hk, pool: hk-main.
   region: ""
   pool: ""
+  entryPoint: ""
+  resourceClass: ""
+  teamId: ""
   role: "agent-proxy"
   id: "edge-node-1"
   controllerUrl: "https://accounts.svc.plus"

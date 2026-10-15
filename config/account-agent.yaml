@@ -7,6 +7,11 @@ agent:
   # Set these per deployment, e.g. region: hk, pool: hk-main.
   region: ""
   pool: ""
+  # Stable user-facing regional entrypoint. Keep this separate from the node id.
+  entryPoint: ""
+  # Explicit controller-authorized synchronization scope.
+  resourceClass: ""
+  teamId: ""
   # Regional discovery metadata. entryPoint defaults to domain when omitted.
   # Set region/pool to the deployed region and pool; never use a runtime node IP.
   # entryPoint: region-entry.example.com

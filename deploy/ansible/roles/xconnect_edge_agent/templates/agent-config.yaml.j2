@@ -12,6 +12,7 @@ agent:
   nodeId: "{{ agent_node_id }}"
   region: {{ agent_region | to_json }}
   pool: {{ agent_pool | to_json }}
+  entryPoint: {{ agent_entry_point | to_json }}
   provider: "{{ agent_provider }}"
   product: "{{ agent_product }}"
   lineCode: "{{ agent_line_code }}"
