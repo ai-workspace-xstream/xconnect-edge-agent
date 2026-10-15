@@ -65,6 +65,37 @@ update_agent_metadata() {
     rm -f "$temporary"
 }
 
+validate_agent_scope() {
+    local value_name value
+
+    case "$RESOURCE_CLASS" in
+        ""|shared|free|plus)
+            if [ -n "$TEAM_ID" ]; then
+                echo "A team ID is only valid with --resource-class team." >&2
+                return 1
+            fi
+            ;;
+        team)
+            if [ -z "$TEAM_ID" ]; then
+                echo "--resource-class team requires --team-id or AGENT_TEAM_ID." >&2
+                return 1
+            fi
+            ;;
+        *)
+            echo "--resource-class must be shared, free, plus, or team." >&2
+            return 1
+            ;;
+    esac
+
+    for value_name in ENTRY_POINT REGION POOL TEAM_ID; do
+        eval "value=\${${value_name}:-}"
+        if [ -n "$value" ] && ! [[ "$value" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+            echo "$value_name must use letters, digits, dots, underscores or hyphens." >&2
+            return 1
+        fi
+    done
+}
+
 ensure_agent_dynamic_users() {
     local file="$1" temporary
     temporary="$(mktemp "${file}.XXXXXX")"
@@ -791,7 +822,7 @@ update_cloudflare_dns_for_domain() {
 usage() {
     cat <<EOF
 Usage:
-  $0 [--upgrade-only|--upgrade] [--node <domain>] [--cloudflare-zone <zone>] [--auth-url <url>] [--internal-service-token <token>] [--open-stunnel-5443] [--standalone]
+  $0 [--upgrade-only|--upgrade] [--node <domain>] [--entry-point <domain>] [--region <code>] [--pool <name>] [--resource-class <class>] [--team-id <id>] [--cloudflare-zone <zone>] [--auth-url <url>] [--internal-service-token <token>] [--open-stunnel-5443] [--standalone]
   $0 --with-observability --node <domain>
   $0 --print-arch
 
@@ -808,6 +839,7 @@ Env (optional):
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
+  AGENT_ENTRY_POINT           # stable regional user-facing entrypoint, e.g. jp-xconnect.onwalk.net
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
   AGENT_RESOURCE_CLASS        # shared (single public node), free, plus, or team
   AGENT_TEAM_ID               # required only for team; enrolled tenant ID
@@ -851,6 +883,16 @@ EOF
 }
 
 DOMAIN="${AGENT_PROXY_DOMAIN:-}"
+ENTRY_POINT="${AGENT_ENTRY_POINT:-}"
+REGION="${AGENT_REGION:-}"
+POOL="${AGENT_POOL:-}"
+RESOURCE_CLASS="${AGENT_RESOURCE_CLASS:-}"
+TEAM_ID="${AGENT_TEAM_ID:-}"
+ENTRY_POINT_SET=false
+REGION_SET=false
+POOL_SET=false
+RESOURCE_CLASS_SET=false
+TEAM_ID_SET=false
 AUTH_URL="${AUTH_URL:-${ACCOUNTS_AUTH_URL:-${Accounts_AUTH_URL:-${ACCOUNTS_URL:-}}}}"
 INTERNAL_SERVICE_TOKEN="${INTERNAL_SERVICE_TOKEN:-${NTERNAL_SERVICE_TOKEN:-}}"
 BILLING_URL="${BILLING_URL:-${BILLING_BASE_URL:-${BILLING_SERVICE_URL:-${BILLING_AUTH_URL:-${BILLING_SERVICE_AUTH_URL:-${Billing_service_AUTH_URL:-${billing_service_url:-${billing_service_auth_url:-}}}}}}}}"
@@ -865,6 +907,61 @@ while [ "$#" -gt 0 ]; do
             ;;
         --node=*)
             DOMAIN="${1#*=}"
+            shift
+            ;;
+        --entry-point)
+            [ "$#" -ge 2 ] || { echo "--entry-point requires a value." >&2; exit 1; }
+            ENTRY_POINT="$2"
+            ENTRY_POINT_SET=true
+            shift 2
+            ;;
+        --entry-point=*)
+            ENTRY_POINT="${1#*=}"
+            ENTRY_POINT_SET=true
+            shift
+            ;;
+        --region)
+            [ "$#" -ge 2 ] || { echo "--region requires a value." >&2; exit 1; }
+            REGION="$2"
+            REGION_SET=true
+            shift 2
+            ;;
+        --region=*)
+            REGION="${1#*=}"
+            REGION_SET=true
+            shift
+            ;;
+        --pool)
+            [ "$#" -ge 2 ] || { echo "--pool requires a value." >&2; exit 1; }
+            POOL="$2"
+            POOL_SET=true
+            shift 2
+            ;;
+        --pool=*)
+            POOL="${1#*=}"
+            POOL_SET=true
+            shift
+            ;;
+        --resource-class)
+            [ "$#" -ge 2 ] || { echo "--resource-class requires a value." >&2; exit 1; }
+            RESOURCE_CLASS="$2"
+            RESOURCE_CLASS_SET=true
+            shift 2
+            ;;
+        --resource-class=*)
+            RESOURCE_CLASS="${1#*=}"
+            RESOURCE_CLASS_SET=true
+            shift
+            ;;
+        --team-id)
+            [ "$#" -ge 2 ] || { echo "--team-id requires a value." >&2; exit 1; }
+            TEAM_ID="$2"
+            TEAM_ID_SET=true
+            shift 2
+            ;;
+        --team-id=*)
+            TEAM_ID="${1#*=}"
+            TEAM_ID_SET=true
             shift
             ;;
         --cloudflare-zone)
@@ -943,6 +1040,13 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [ "${AGENT_ENTRY_POINT+x}" = x ]; then ENTRY_POINT_SET=true; fi
+if [ "${AGENT_REGION+x}" = x ]; then REGION_SET=true; fi
+if [ "${AGENT_POOL+x}" = x ]; then POOL_SET=true; fi
+if [ "${AGENT_RESOURCE_CLASS+x}" = x ]; then RESOURCE_CLASS_SET=true; fi
+if [ "${AGENT_TEAM_ID+x}" = x ]; then TEAM_ID_SET=true; fi
+validate_agent_scope
 
 if [ "$PRINT_ARCH" = false ]; then
     if [ -z "$DOMAIN" ]; then
@@ -1251,17 +1355,21 @@ if [ "$STANDALONE_MODE" != true ]; then
     ensure_agent_dynamic_users /etc/agent/account-agent.yaml
 
     # Apply runtime config from args/env (idempotent)
-    if [ -n "${AGENT_REGION:-}" ]; then
-        update_agent_metadata /etc/agent/account-agent.yaml region "$AGENT_REGION"
+    if [ "$REGION_SET" = true ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml region "$REGION"
     fi
-    if [ -n "${AGENT_POOL:-}" ]; then
-        update_agent_metadata /etc/agent/account-agent.yaml pool "$AGENT_POOL"
+    if [ "$POOL_SET" = true ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml pool "$POOL"
     fi
-    if [ "${AGENT_RESOURCE_CLASS+x}" = x ]; then
-        update_agent_metadata /etc/agent/account-agent.yaml resourceClass "$AGENT_RESOURCE_CLASS"
+    if [ "$ENTRY_POINT_SET" = true ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml entryPoint "$ENTRY_POINT"
     fi
-    if [ "${AGENT_TEAM_ID+x}" = x ]; then
-        update_agent_metadata /etc/agent/account-agent.yaml teamId "$AGENT_TEAM_ID"
+    if [ "$RESOURCE_CLASS_SET" = true ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml resourceClass "$RESOURCE_CLASS"
+        # Switching a node back to a public scope must remove a stale team ID.
+        update_agent_metadata /etc/agent/account-agent.yaml teamId "$TEAM_ID"
+    elif [ "$TEAM_ID_SET" = true ]; then
+        update_agent_metadata /etc/agent/account-agent.yaml teamId "$TEAM_ID"
     fi
     # JSON strings are valid YAML strings and safely preserve token punctuation.
     AGENT_PROXY_DOMAIN="$DOMAIN" AUTH_URL="$AUTH_URL" INTERNAL_SERVICE_TOKEN="$INTERNAL_SERVICE_TOKEN" python3 - <<'PY_CONFIG'

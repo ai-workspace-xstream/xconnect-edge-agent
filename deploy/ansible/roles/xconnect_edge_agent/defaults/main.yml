@@ -19,13 +19,14 @@ xconnect_edge_agent_data_dir: "/opt/xconnect-edge-agent"
 
 # Agent configuration
 # Empty preserves legacy sync. Enable only after Accounts supports authorized scopes.
-agent_resource_class: ""
-agent_team_id: ""
+agent_resource_class: "{{ xconnect_resource_class | default(lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS') | default('', true), true) }}"
+agent_team_id: "{{ xconnect_team_id | default(lookup('ansible.builtin.env', 'AGENT_TEAM_ID') | default('', true), true) }}"
 agent_role: "agent-proxy"
 agent_id: "us-xhttp.svc.plus"
 agent_node_id: "{{ agent_id }}"
 agent_region: "{{ xconnect_region | default(lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true), true) }}"
 agent_pool: "{{ xconnect_pool | default(lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true), true) }}"
+agent_entry_point: "{{ xconnect_entry_point | default(lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default('', true), true) }}"
 agent_provider: ""
 agent_product: ""
 agent_line_code: ""
