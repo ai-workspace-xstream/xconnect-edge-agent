@@ -4,6 +4,8 @@ log:
   level: {{ agent_log_level }}
 
 agent:
+  resourceClass: {{ agent_resource_class | to_json }}
+  teamId: {{ agent_team_id | to_json }}
   role: "{{ agent_role }}"
   id: "{{ agent_id }}"
   domain: "{{ agent_id }}"
