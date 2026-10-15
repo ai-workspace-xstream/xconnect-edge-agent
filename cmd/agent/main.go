@@ -8,9 +8,11 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentmode"
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/telemetry"
 )
 
 var (
@@ -30,6 +32,18 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	shutdownTelemetry, telemetryErr := telemetry.Init(context.Background(), gitCommit)
+	if telemetryErr != nil {
+		logger.Warn("OpenTelemetry exporter initialization failed; continuing without export", "err", telemetryErr)
+	} else {
+		defer func() {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer shutdownCancel()
+			if err := shutdownTelemetry(shutdownCtx); err != nil {
+				logger.Warn("OpenTelemetry shutdown failed", "err", err)
+			}
+		}()
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
