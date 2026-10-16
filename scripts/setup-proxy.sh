@@ -410,6 +410,16 @@ EOF
     for _ in $(seq 1 60); do
         if [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/fullchain.pem" ] && [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/key.pem" ]; then
             echo -e "$GREEN Vault Agent rendered the TLS certificate and key.$NC"
+            # Vault Agent runs the sync helper through its template exec hook,
+            # but the first render can race the installer immediately after
+            # restart.  Make the handoff deterministic before Caddy validation
+            # below, while retaining the helper's atomic replacement logic.
+            if ! VAULT_AGENT_TLS_STAGE_DIR="$VAULT_AGENT_TLS_STAGE_DIR" \
+                VAULT_AGENT_TLS_DOMAIN="$DOMAIN" \
+                /usr/local/sbin/sync-vault-agent-caddy-tls; then
+                echo -e "$RED Vault Agent rendered TLS material, but Caddy certificate sync failed.$NC" >&2
+                return 1
+            fi
             return 0
         fi
         sleep 2
