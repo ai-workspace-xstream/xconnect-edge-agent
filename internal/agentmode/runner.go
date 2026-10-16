@@ -343,6 +343,8 @@ func runStatusReporter(ctx context.Context, client *Client, tracker *syncTracker
 			return
 		case <-ticker.C:
 			send()
+		case <-tracker.changes:
+			send()
 		}
 	}
 }

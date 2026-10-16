@@ -13,10 +13,11 @@ type syncTracker struct {
 	lastSuccess time.Time
 	lastError   string
 	lastErrorAt time.Time
+	changes     chan struct{}
 }
 
 func newSyncTracker() *syncTracker {
-	return &syncTracker{}
+	return &syncTracker{changes: make(chan struct{}, 1)}
 }
 
 func (t *syncTracker) UpdateFetch(count int, revision string, when time.Time) {
@@ -35,6 +36,7 @@ func (t *syncTracker) MarkSuccess(at time.Time) {
 	t.lastSuccess = at
 	t.lastError = ""
 	t.lastErrorAt = time.Time{}
+	t.notifyChange()
 }
 
 func (t *syncTracker) MarkError(err error, at time.Time) {
@@ -46,6 +48,16 @@ func (t *syncTracker) MarkError(err error, at time.Time) {
 
 	t.lastError = err.Error()
 	t.lastErrorAt = at
+	t.notifyChange()
+}
+
+// Coalesce sync completions without blocking the synchronizer on an HTTP
+// heartbeat. The reporter always reads the latest snapshot when awakened.
+func (t *syncTracker) notifyChange() {
+	select {
+	case t.changes <- struct{}{}:
+	default:
+	}
 }
 
 type trackerSnapshot struct {
