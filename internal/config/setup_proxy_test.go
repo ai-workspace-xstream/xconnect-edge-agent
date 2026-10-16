@@ -133,10 +133,15 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
 		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-}"`,
 		"install_xray_from_maintained_fork",
+		`bash "${installer}" install --version "${XRAY_RELEASE_TAG}"`,
+		`bash "${installer}" install`,
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("missing maintained Xray fork contract: %s", required)
 		}
+	}
+	if strings.Contains(script, `bash "${installer}" @ install`) {
+		t.Fatal("vendored Xray installer must not receive an unsupported @ argument")
 	}
 	if strings.Contains(script, "XTLS/Xray-install") || strings.Contains(script, "github.com/XTLS/Xray") {
 		t.Fatal("setup script must not fall back to the upstream Xray installer")
