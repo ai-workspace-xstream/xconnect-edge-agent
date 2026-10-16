@@ -23,7 +23,8 @@ agent:
     insecureSkipVerify: false
 
 billing:
-  enabled: true
+  # Billing snapshots are pushed by Vector; Agent pull jobs stay disabled.
+  enabled: false
   baseURL: "https://billing.svc.plus"
   httpTimeout: 15s
   collectInterval: 1m

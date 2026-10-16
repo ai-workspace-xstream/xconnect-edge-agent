@@ -232,7 +232,8 @@ unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 - 将 `AGENT_REGION`、`AGENT_POOL` 写入 `agent.region`、`agent.pool`，供状态上报和区域入口汇总使用；未提供时保留节点已有值。
 - 将 `AGENT_ENTRY_POINT` 写入 `agent.entryPoint`，用于上报该节点实际连接域名；Shared 通用池可以让它与 `AGENT_PROXY_DOMAIN` 相同。`AGENT_RESOURCE_CLASS` 和 `AGENT_TEAM_ID` 写入同步范围并校验团队关系。
 - 将 `AUTH_URL` 写入 `agent.controllerUrl`，将 `INTERNAL_SERVICE_TOKEN` 写入 `agent.apiToken`；
-- 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
+- 统一关闭 Agent Billing 定时采集（`billing.enabled: false`），包括重跑时迁移已有配置；
+- 使用 `--with-observability` 安装 Vector 推送计费，`BILLING_SERVICE_URL` 用于生成 `/v1/ingest/snapshots` 接收地址，认证使用运行时 `INTERNAL_SERVICE_TOKEN`；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
 - 当 `VAULT_ADDR`、`VAULT_TOKEN` 和 `VAULT_TLS_SECRET_PATH` 均已提供时，安装并启用
    Vault Agent，生成 `/etc/vault.d/agent.hcl`、`/etc/vault.d/token` 和
@@ -273,7 +274,7 @@ agent:
     insecureSkipVerify: false
 
 billing:
-  enabled: true
+  enabled: false # Vector 推送计费，关闭 Agent 定时采集
   baseURL: "https://billing.example.com"
   httpTimeout: 15s
   collectInterval: 1m

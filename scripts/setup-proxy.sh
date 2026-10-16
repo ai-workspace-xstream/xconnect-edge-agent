@@ -36,6 +36,26 @@ VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls
 VAULT_TLS_CERT_FIELD="${VAULT_TLS_CERT_FIELD:-tls_fullchain_pem_b64}"
 VAULT_TLS_KEY_FIELD="${VAULT_TLS_KEY_FIELD:-tls_key_pem_b64}"
 
+# Retire Agent pull jobs without changing unrelated enabled flags in Xray/TLS.
+configure_vector_billing() {
+    python3 - "$1" <<'PY_BILLING'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+match = re.search(r'^billing:[^\n]*\n(?:(?:[ \t]+[^\n]*|[ \t]*|\#.*)\n)*', text, re.M)
+if match:
+    block = match.group(0)
+    if re.search(r'^  enabled:', block, re.M):
+        block = re.sub(r'^  enabled:.*$', '  enabled: false', block, flags=re.M)
+    else:
+        block = block.split('\n', 1)[0] + '\n  enabled: false\n' + block.split('\n', 1)[1]
+    text = text[:match.start()] + block + text[match.end():]
+else:
+    text = text.rstrip() + '\n\nbilling:\n  enabled: false\n'
+path.write_text(text)
+PY_BILLING
+}
+
 update_agent_metadata() {
     local file="$1" key="$2" value="$3" temporary
     if [ -z "$value" ] && [ "$key" != teamId ] && [ "$key" != resourceClass ]; then
@@ -1422,22 +1442,8 @@ for key, variable in [('id', 'AGENT_PROXY_DOMAIN'), ('controllerUrl', 'AUTH_URL'
                       lambda match: match.group(1) + json.dumps(value), text, flags=re.M)
 path.write_text(text)
 PY_CONFIG
-    if [ -n "$BILLING_URL" ]; then
-        if grep -q "billing:" /etc/agent/account-agent.yaml; then
-            sed -i -E "s|^([[:space:]]*baseURL:[[:space:]]*).*$|\\1\"${BILLING_URL}\"|g" /etc/agent/account-agent.yaml
-            sed -i -E "s|^([[:space:]]*enabled:[[:space:]]*).*$|\\1true|g" /etc/agent/account-agent.yaml
-        else
-            cat >> /etc/agent/account-agent.yaml <<EOF
+    configure_vector_billing /etc/agent/account-agent.yaml
 
-billing:
-  enabled: true
-  baseURL: "${BILLING_URL}"
-  httpTimeout: 15s
-  collectInterval: 1m
-  reconcileInterval: 5m
-EOF
-        fi
-    fi
 fi
 
 # 6. Caddy Configuration
@@ -1733,7 +1739,7 @@ else
         echo -e "  - apiToken: <not set>"
     fi
     if [ -n "$BILLING_URL" ]; then
-        echo -e "  - billing.baseURL: ${BILLING_URL}"
+        echo -e "  - Vector billing ingest: ${BILLING_URL%/}/v1/ingest/snapshots (requires --with-observability)"
     fi
     if [ -z "$AUTH_URL" ] || [ -z "$INTERNAL_SERVICE_TOKEN" ]; then
         echo -e "Set AUTH_URL and INTERNAL_SERVICE_TOKEN then run: systemctl restart xconnect-edge-agent"

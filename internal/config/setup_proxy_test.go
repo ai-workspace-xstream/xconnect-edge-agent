@@ -182,3 +182,50 @@ func TestSetupProxyRejectsMismatchedTeamScopeArguments(t *testing.T) {
 		}
 	}
 }
+
+func TestSetupProxyVectorBillingMigration(t *testing.T) {
+	script, err := os.ReadFile("../../scripts/setup-proxy.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := strings.Index(string(script), "configure_vector_billing() {")
+	if start < 0 {
+		t.Fatal("missing Vector migration")
+	}
+	end := strings.Index(string(script[start:]), "\n}\n")
+	function := string(script[start : start+end+3])
+	for _, block := range []string{"", "billing:\n  enabled: true\n", "billing:\n  baseURL: https://billing.example.com\n", "billing:\n  enabled: false\n  baseURL: https://billing.example.com\n"} {
+		t.Run(block, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "agent.yaml")
+			original := "agent:\n  id: test\nxray:\n  sync:\n    enabled: true\n" + block + "log:\n  level: info\n"
+			if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var previous string
+			for i := 0; i < 2; i++ {
+				cmd := exec.Command("bash", "-c", function+"\nconfigure_vector_billing \"$1\"", "test", path)
+				if out, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("%v: %s", err, out)
+				}
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				cfg, err := LoadReader(bytes.NewReader(data))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.Billing.Enabled || !cfg.Xray.Sync.Enabled {
+					t.Fatal("migration changed unrelated flags or enabled pull billing")
+				}
+				if !strings.Contains(string(data), "log:\n  level: info") {
+					t.Fatal("lost unrelated configuration")
+				}
+				if i == 1 && previous != string(data) {
+					t.Fatal("migration is not idempotent")
+				}
+				previous = string(data)
+			}
+		})
+	}
+}
