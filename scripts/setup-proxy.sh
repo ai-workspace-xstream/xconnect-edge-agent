@@ -854,9 +854,9 @@ Env (optional):
   AUTH_URL
   INTERNAL_SERVICE_TOKEN
   AGENT_PROXY_DOMAIN
-  AGENT_ENTRY_POINT           # stable regional user-facing entrypoint, e.g. jp-xconnect.onwalk.net
+  AGENT_ENTRY_POINT           # actual node connection domain; can match AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
-  AGENT_RESOURCE_CLASS        # shared (single public node), free, plus, or team
+  AGENT_RESOURCE_CLASS        # shared (Free + Plus), free, plus, or team
   AGENT_TEAM_ID               # required only for team; enrolled tenant ID
   AGENT_POOL                  # logical pool identifier within the region
   AGENT_RELEASE_TAG=v2026.10.10-r1  # maintained agent release

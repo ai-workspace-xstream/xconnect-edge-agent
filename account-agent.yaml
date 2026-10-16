@@ -4,7 +4,8 @@ log:
   level: info
 
 agent:
-  # Set these per deployment, e.g. region: hk, pool: hk-main.
+  # Set per node: shared (Free + Plus), plus (Plus-only), or team (requires teamId).
+  # For the shared node, entryPoint may equal id/domain (for example jp-xconnect.svc.plus).
   region: ""
   pool: ""
   entryPoint: ""

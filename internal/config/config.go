@@ -25,6 +25,7 @@ type Log struct {
 }
 
 type Agent struct {
+	// ResourceClass selects the user sync scope: shared (Free + Plus), plus, or team.
 	ResourceClass     string        `yaml:"resourceClass"`
 	TeamID            string        `yaml:"teamId"`
 	OverlayStatusPath string        `yaml:"overlayStatusPath"`
