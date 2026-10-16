@@ -374,26 +374,19 @@ get_latest_version() {
   local tmp_file
   tmp_file="$(mktemp)"
   local url="${XRAY_CORE_API_BASE:-https://api.github.com/repos/ai-workspace-xstream/Xray-core/releases}/latest"
-  if curl -x "${PROXY}" -sSfLo "$tmp_file" -H "Accept: application/vnd.github.v3+json" "$url"; then
+  if curl -x "${PROXY}" -sSfLo "$tmp_file" -H "Accept: application/vnd.github.v3+json" "$url" 2>/dev/null; then
     echo "get release list success"
   else
-    "rm" "$tmp_file"
-    echo 'error: Failed to get release list, please check your network.'
-    exit 1
+    # GitHub's /releases/latest excludes prereleases and returns 404 when a
+    # fork only publishes prereleases. Resolve from the published release list
+    # below, then select the newest release that contains the platform asset.
+    RELEASE_LATEST=''
   fi
   RELEASE_LATEST="$(sed 'y/,/\n/' "$tmp_file" | grep 'tag_name' | awk -F '"' '{print $4}')"
-  if [[ -z "$RELEASE_LATEST" ]]; then
-    if grep -q "API rate limit exceeded" "$tmp_file"; then
-      echo "error: github API rate limit exceeded"
-    else
-      echo "error: Failed to get the latest release version."
-      echo "Welcome bug report:https://github.com/XTLS/Xray-install/issues"
-    fi
-    "rm" "$tmp_file"
-    exit 1
-  fi
   "rm" "$tmp_file"
-  RELEASE_LATEST="v${RELEASE_LATEST#v}"
+  if [[ -n "$RELEASE_LATEST" ]]; then
+    RELEASE_LATEST="v${RELEASE_LATEST#v}"
+  fi
   url="${XRAY_CORE_API_BASE:-https://api.github.com/repos/ai-workspace-xstream/Xray-core/releases}"
   if curl -x "${PROXY}" -sSfLo "$tmp_file" -H "Accept: application/vnd.github.v3+json" "$url"; then
     echo "get release list success"
@@ -424,6 +417,13 @@ get_latest_version() {
     fi
   done
   "rm" "$tmp_file"
+  if [[ -z "$RELEASE_LATEST" ]]; then
+    RELEASE_LATEST="$PRE_RELEASE_LATEST"
+  fi
+  if [[ -z "$RELEASE_LATEST" ]]; then
+    echo "error: No published Xray release with a Linux $MACHINE asset was found in ${XRAY_CORE_API_BASE:-the configured repository}."
+    exit 1
+  fi
 }
 
 version_gt() {
