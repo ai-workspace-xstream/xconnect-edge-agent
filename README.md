@@ -196,6 +196,8 @@ export AGENT_POOL="<区域内的 pool 标识，例如 hk-main>"
 export AGENT_RESOURCE_CLASS="<shared、free、plus 或 team>"
 # team 节点必须设置；公共节点保持为空或不要设置
 export AGENT_TEAM_ID="<Accounts 中登记的团队 ID>"
+# 不设置 AGENT_RELEASE_TAG / XRAY_RELEASE_TAG 时，分别安装各自仓库的最新 release。
+# 仅在需要固定版本复现或分阶段发布时设置这两个变量。
 export AUTH_URL="https://accounts.example.com"
 export BILLING_SERVICE_URL="https://billing.example.com"
 

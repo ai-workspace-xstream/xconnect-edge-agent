@@ -22,14 +22,14 @@ LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
 CLOUDFLARE_ZONE_NAME="${CLOUDFLARE_ZONE_NAME:-}"
 CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
-# Pin installs to the latest reviewed stable release. Use an explicit override
-# for a staged release; never silently follow the moving GitHub `latest` alias.
-AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-v2026.10.10-r1}"
+# Follow the repository's latest release by default. Set AGENT_RELEASE_TAG to
+# pin a specific release for reproducible installs or staged rollouts.
+AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
 XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"
-# v26.10.10 is currently a source-only tag in the maintained fork. Keep the
-# default on the newest published binary release until that tag has assets.
-XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"
+# The vendored installer resolves the latest release when no version is given.
+# Set XRAY_RELEASE_TAG to pin a specific release for reproducible installs.
+XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-}"
 XRAY_RELEASE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases"
 VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
 VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
@@ -488,10 +488,16 @@ install_xray_from_maintained_fork() {
         echo -e "${RED}Vendored Xray installer is missing: ${installer}${NC}" >&2
         return 1
     fi
-    echo "Installing Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
-    XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
-        XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
-        bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
+    echo "Installing Xray ${XRAY_RELEASE_TAG:-latest release} from maintained fork ${XRAY_REPO}..."
+    if [ -n "${XRAY_RELEASE_TAG}" ] && [ "${XRAY_RELEASE_TAG}" != "latest" ]; then
+        XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
+            XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
+            bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
+    else
+        XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
+            XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
+            bash "${installer}" @ install
+    fi
 }
 
 
@@ -859,9 +865,9 @@ Env (optional):
   AGENT_RESOURCE_CLASS        # shared (Free + Plus), free, plus, or team
   AGENT_TEAM_ID               # required only for team; enrolled tenant ID
   AGENT_POOL                  # logical pool identifier within the region
-  AGENT_RELEASE_TAG=v2026.10.10-r1  # maintained agent release
+  AGENT_RELEASE_TAG=v2026.10.10-r1  # optional: pin an agent release
   XRAY_REPO=ai-workspace-xstream/Xray-core
-  XRAY_RELEASE_TAG=v26.3.27-uat-r3  # newest published maintained-fork binary
+  XRAY_RELEASE_TAG=v26.3.27-uat-r3  # optional: pin an Xray release
   OBSERVABILITY_PLAYBOOKS_REF=f9909bf7f9ef9684376e5bae99bd1d2f2da9d69a  # immutable SHA
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
