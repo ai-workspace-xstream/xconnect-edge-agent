@@ -22,10 +22,14 @@ LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
 CLOUDFLARE_ZONE_NAME="${CLOUDFLARE_ZONE_NAME:-}"
 CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
-AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
+# Pin installs to the latest reviewed stable release. Use an explicit override
+# for a staged release; never silently follow the moving GitHub `latest` alias.
+AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-v2026.10.10-r1}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
 XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"
-XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"
+# v26.10.10 is currently a source-only tag in the maintained fork. Keep the
+# default on the newest published binary release until that tag has assets.
+XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"
 XRAY_RELEASE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases"
 VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
 VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
@@ -806,8 +810,10 @@ Env (optional):
   AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
   AGENT_POOL                  # logical pool identifier within the region
+  AGENT_RELEASE_TAG=v2026.10.10-r1  # maintained agent release
   XRAY_REPO=ai-workspace-xstream/Xray-core
-  XRAY_RELEASE_TAG=v26.3.27  # maintained fork release; no upstream fallback
+  XRAY_RELEASE_TAG=v26.3.27-uat-r3  # newest published maintained-fork binary
+  OBSERVABILITY_PLAYBOOKS_REF=f9909bf7f9ef9684376e5bae99bd1d2f2da9d69a  # immutable SHA
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
