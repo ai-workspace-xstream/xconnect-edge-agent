@@ -29,3 +29,25 @@ func TestLoadScopeEnvironment(t *testing.T) {
 		t.Fatalf("scope env not applied: %v", err)
 	}
 }
+
+// A pool name is metadata, even when it resembles another resource class.
+func TestResourceClassIndependentOfPool(t *testing.T) {
+	for _, class := range []string{"shared", "free", "plus", "team"} {
+		t.Run(class, func(t *testing.T) {
+			t.Setenv("AGENT_RESOURCE_CLASS", class)
+			t.Setenv("AGENT_POOL", "jp-free")
+			team := ""
+			if class == "team" {
+				team = "tenant-a"
+			}
+			t.Setenv("AGENT_TEAM_ID", team)
+			cfg, err := LoadReader(strings.NewReader("agent:\n  resourceClass: free\n  pool: arbitrary-pool\n"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Agent.ResourceClass != class || cfg.Agent.Pool != "arbitrary-pool" {
+				t.Fatalf("resource class must be selected independently of pool: %+v", cfg.Agent)
+			}
+		})
+	}
+}

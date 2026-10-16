@@ -64,7 +64,7 @@ func (a Agent) EffectiveRole() string {
 	return a.Role
 }
 
-// ValidateUserScope rejects ambiguous pool configuration before any synchronization.
+// ValidateUserScope validates the explicit resource class independently of Pool.
 // Empty scope retains compatibility with existing controller deployments.
 func (a Agent) ValidateUserScope() error {
 	switch a.ResourceClass {

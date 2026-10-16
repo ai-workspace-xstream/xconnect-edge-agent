@@ -59,7 +59,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logger.Info("starting agent", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole())
+	logger.Info("starting agent", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole(), "resourceClass", cfg.Agent.ResourceClass, "teamId", cfg.Agent.TeamID, "pool", cfg.Agent.Pool)
 
 	opts := agentmode.Options{
 		Logger:  logger,
