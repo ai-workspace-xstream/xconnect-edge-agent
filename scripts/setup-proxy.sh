@@ -1380,7 +1380,18 @@ echo "Updated Xray TCP template/config to use: ${XRAY_CERT}"
 
 write_caddy_config
 apply_log_retention_policy
-if [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
+if [ "$XRAY_CERT" = "/etc/caddy/tls/agent-proxy.crt" ] && [ ! -s "$XRAY_CERT" ]; then
+    # A stale or partially configured host can leave the Caddyfile pointing at
+    # the Vault-managed path while the Vault Agent was never configured. Do not
+    # fall through to caddy validate with a missing certificate: fail with the
+    # actionable credential error from configure_vault_agent_tls instead.
+    if [ -z "$VAULT_ADDR" ] || [ -z "$VAULT_TOKEN" ] || [ -z "$VAULT_TLS_SECRET_PATH" ]; then
+        echo -e "$RED Caddy is configured for Vault TLS, but VAULT_ADDR, VAULT_TOKEN, or VAULT_TLS_SECRET_PATH is missing.$NC" >&2
+        echo -e "$RED Export the Vault variables and rerun setup-proxy.sh.$NC" >&2
+        exit 1
+    fi
+    configure_vault_agent_tls
+elif [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
     # The Caddyfile deliberately points at the Vault-synced certificate path.
     # Bootstrap Vault Agent before validating or starting Caddy; otherwise
     # `set -e` aborts on the missing file and never reaches this setup in step 7.
