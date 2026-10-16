@@ -22,10 +22,14 @@ LEGACY_AGENT_SERVICE_NAME="agent-svc-plus"
 CLOUDFLARE_ZONE_NAME="${CLOUDFLARE_ZONE_NAME:-}"
 CLOUDFLARE_API_BASE="https://api.cloudflare.com/client/v4"
 GITHUB_REPO="${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}"
-AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-latest}"
+# Pin installs to the latest reviewed stable release. Use an explicit override
+# for a staged release; never silently follow the moving GitHub `latest` alias.
+AGENT_RELEASE_TAG="${AGENT_RELEASE_TAG:-v2026.10.10-r1}"
 AGENT_RELEASE_BASE_URL="https://github.com/${GITHUB_REPO}/releases"
 XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"
-XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"
+# v26.10.10 is currently a source-only tag in the maintained fork. Keep the
+# default on the newest published binary release until that tag has assets.
+XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"
 XRAY_RELEASE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases"
 VAULT_AGENT_VERSION="${VAULT_AGENT_VERSION:-1.21.4}"
 VAULT_AGENT_TLS_STAGE_DIR="${VAULT_AGENT_TLS_STAGE_DIR:-/var/lib/vault-agent/tls}"
@@ -441,6 +445,16 @@ EOF
     for _ in $(seq 1 60); do
         if [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/fullchain.pem" ] && [ -s "$VAULT_AGENT_TLS_STAGE_DIR/current/key.pem" ]; then
             echo -e "$GREEN Vault Agent rendered the TLS certificate and key.$NC"
+            # Vault Agent runs the sync helper through its template exec hook,
+            # but the first render can race the installer immediately after
+            # restart.  Make the handoff deterministic before Caddy validation
+            # below, while retaining the helper's atomic replacement logic.
+            if ! VAULT_AGENT_TLS_STAGE_DIR="$VAULT_AGENT_TLS_STAGE_DIR" \
+                VAULT_AGENT_TLS_DOMAIN="$DOMAIN" \
+                /usr/local/sbin/sync-vault-agent-caddy-tls; then
+                echo -e "$RED Vault Agent rendered TLS material, but Caddy certificate sync failed.$NC" >&2
+                return 1
+            fi
             return 0
         fi
         sleep 2
@@ -477,8 +491,9 @@ install_xray_from_maintained_fork() {
     echo "Installing Xray ${XRAY_RELEASE_TAG} from maintained fork ${XRAY_REPO}..."
     XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
         XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
-        bash "${installer}" install --version "${XRAY_RELEASE_TAG}"
+        bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
 }
+
 
 resolve_release_download_url() {
     local asset_name="$1"
@@ -844,8 +859,10 @@ Env (optional):
   AGENT_RESOURCE_CLASS        # shared (single public node), free, plus, or team
   AGENT_TEAM_ID               # required only for team; enrolled tenant ID
   AGENT_POOL                  # logical pool identifier within the region
+  AGENT_RELEASE_TAG=v2026.10.10-r1  # maintained agent release
   XRAY_REPO=ai-workspace-xstream/Xray-core
-  XRAY_RELEASE_TAG=v26.3.27  # maintained fork release; no upstream fallback
+  XRAY_RELEASE_TAG=v26.3.27-uat-r3  # newest published maintained-fork binary
+  OBSERVABILITY_PLAYBOOKS_REF=f9909bf7f9ef9684376e5bae99bd1d2f2da9d69a  # immutable SHA
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>
@@ -1240,7 +1257,23 @@ render_xray_config_from_template() {
     local output_path="$2"
     local uuid_value="$3"
 
-    sed "s|{{ UUID }}|${uuid_value}|g" "$template_path" > "$output_path"
+    # Keep the deployed Xray document readable even when an older template is
+    # still present on a host.  Parse after interpolation and write canonical
+    # indented JSON so `cat`/incident inspection remains useful.  Passing the
+    # values as argv avoids shell interpolation of a UUID or a path.
+    python3 - "$template_path" "$output_path" "$uuid_value" <<'PY'
+import json
+import pathlib
+import sys
+
+template_path, output_path, uuid_value = sys.argv[1:]
+raw = pathlib.Path(template_path).read_text(encoding="utf-8")
+document = json.loads(raw.replace("{{ UUID }}", uuid_value))
+pathlib.Path(output_path).write_text(
+    json.dumps(document, indent=2, ensure_ascii=False) + "\n",
+    encoding="utf-8",
+)
+PY
 }
 
 print_standalone_links() {
@@ -1468,7 +1501,22 @@ echo "Updated Xray TCP template/config to use: ${XRAY_CERT}"
 
 write_caddy_config
 apply_log_retention_policy
-if [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
+VAULT_TLS_BOOTSTRAP_REQUIRED=false
+if [ "$XRAY_CERT" = "/etc/caddy/tls/agent-proxy.crt" ] && [ ! -s "$XRAY_CERT" ]; then
+    # A stale or partially configured host can leave the Caddyfile pointing at
+    # the Vault-managed path while the Vault Agent was never configured. Do not
+    # fall through to caddy validate with a missing certificate: fail with the
+    # actionable credential error from configure_vault_agent_tls instead.
+    if [ -z "$VAULT_ADDR" ] || [ -z "$VAULT_TOKEN" ] || [ -z "$VAULT_TLS_SECRET_PATH" ]; then
+        echo -e "$RED Caddy is configured for Vault TLS, but VAULT_ADDR, VAULT_TOKEN, or VAULT_TLS_SECRET_PATH is missing.$NC" >&2
+        echo -e "$RED Export the Vault variables and rerun setup-proxy.sh.$NC" >&2
+        exit 1
+    fi
+    VAULT_TLS_BOOTSTRAP_REQUIRED=true
+elif [ -n "$VAULT_ADDR" ] || [ -n "$VAULT_TOKEN" ] || [ -n "$VAULT_TLS_SECRET_PATH" ]; then
+    VAULT_TLS_BOOTSTRAP_REQUIRED=true
+fi
+if [ "$VAULT_TLS_BOOTSTRAP_REQUIRED" = true ]; then
     # The Caddyfile deliberately points at the Vault-synced certificate path.
     # Bootstrap Vault Agent before validating or starting Caddy; otherwise
     # `set -e` aborts on the missing file and never reaches this setup in step 7.

@@ -123,7 +123,6 @@ func TestSetupProxyBootstrapsVaultTLSBeforeCaddyValidation(t *testing.T) {
 		t.Fatal("expected exactly one Vault TLS bootstrap call")
 	}
 }
-
 func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
 	if err != nil {
@@ -132,7 +131,7 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	script := string(scriptBytes)
 	for _, required := range []string{
 		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
-		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"`,
+		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"`,
 		"install_xray_from_maintained_fork",
 	} {
 		if !strings.Contains(script, required) {
