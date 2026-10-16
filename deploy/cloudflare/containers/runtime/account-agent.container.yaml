@@ -7,6 +7,9 @@ agent:
   # Set these per deployment, e.g. region: hk, pool: hk-main.
   region: ""
   pool: ""
+  entryPoint: ""
+  resourceClass: ""
+  teamId: ""
   # Unique identifier for this agent node (e.g., "hk-xhttp.svc.plus", "us-tcp.svc.plus")
   id: "hk-xhttp.svc.plus"
   # URL of the accounts.svc.plus controller
@@ -29,7 +32,7 @@ xray:
       - name: "xhttp"
         outputPath: "/usr/local/etc/xray/config.json"
         templatePath: "/usr/local/etc/xray/templates/xray.xhttp.template.json"
-        validateCommand: []
+        validateCommand: ["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]
         restartCommand:
           - "systemctl"
           - "restart"
@@ -42,7 +45,7 @@ xray:
       - name: "tcp"
         outputPath: "/usr/local/etc/xray/tcp-config.json"
         templatePath: "/usr/local/etc/xray/templates/xray.tcp.template.json"
-        validateCommand: []
+        validateCommand: ["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]
         restartCommand:
           - "systemctl"
           - "restart"

@@ -123,7 +123,6 @@ func TestSetupProxyBootstrapsVaultTLSBeforeCaddyValidation(t *testing.T) {
 		t.Fatal("expected exactly one Vault TLS bootstrap call")
 	}
 }
-
 func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
 	if err != nil {
@@ -132,7 +131,7 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	script := string(scriptBytes)
 	for _, required := range []string{
 		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
-		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27}"`,
+		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"`,
 		"install_xray_from_maintained_fork",
 	} {
 		if !strings.Contains(script, required) {
@@ -141,5 +140,39 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	}
 	if strings.Contains(script, "XTLS/Xray-install") || strings.Contains(script, "github.com/XTLS/Xray") {
 		t.Fatal("setup script must not fall back to the upstream Xray installer")
+	}
+}
+
+func TestSetupProxyAcceptsRegionalScopeArguments(t *testing.T) {
+	cmd := exec.Command("bash", "../../scripts/setup-proxy.sh",
+		"--print-arch",
+		"--entry-point", "jp-xconnect.onwalk.net",
+		"--region", "jp",
+		"--pool", "jp-main",
+		"--resource-class", "plus",
+	)
+	cmd.Env = append(os.Environ(),
+		"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
+		"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("regional scope arguments rejected: %v\n%s", err, output)
+	}
+}
+
+func TestSetupProxyRejectsMismatchedTeamScopeArguments(t *testing.T) {
+	cases := [][]string{
+		{"--print-arch", "--resource-class", "team"},
+		{"--print-arch", "--resource-class", "free", "--team-id", "team-a"},
+	}
+	for _, args := range cases {
+		cmd := exec.Command("bash", append([]string{"../../scripts/setup-proxy.sh"}, args...)...)
+		cmd.Env = append(os.Environ(),
+			"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
+			"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
+		)
+		if output, err := cmd.CombinedOutput(); err == nil {
+			t.Fatalf("mismatched scope accepted for %v\n%s", args, output)
+		}
 	}
 }

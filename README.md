@@ -13,111 +13,104 @@
 
 ---
 
+## 📑 目录
+
+- [项目定位](#-项目定位)
+- [核心能力](#-核心能力)
+- [部署模式](#-部署模式)
+- [快速开始](#-快速开始)
+- [相关项目与资源](#-相关项目与资源)
+- [扩展阅读：高级部署与运维](#-扩展阅读高级部署与运维)
+
 ## 📡 项目定位
 
-**XConnect Edge Agent** 是部署在 XConnect 代理节点上的边缘控制代理，负责把节点运行时连接到 [accounts 控制面](https://github.com/ai-workspace-services/accounts)：
+XConnect Edge Agent 是运行在代理节点上的控制代理：向 [accounts](https://github.com/ai-workspace-services/accounts) 认证，接收用户和节点配置，在本机管理 Xray，并上报心跳与健康状态。Caddy 负责 HTTPS/TLS 和入口反向代理。
 
-- 🔐 使用节点凭据与 `accounts` 完成认证通信。
-- 🔄 同步用户/节点配置，并在本机生成和更新 Xray 配置。
-- 💓 上报节点心跳、健康状态、同步进度及运行信息。
-- ⚙️ 管理 Xray 配置加载与服务生命周期；Caddy 负责 HTTPS/TLS 与入口反向代理。
+它不保存账号数据库、不提供计费真相源，也不替代监控系统；节点凭据和运行时密钥必须由 Vault 或其他 Secret Manager 注入。
 
-它是节点侧的控制面组件，不是账号数据库、计费真相源或独立的指标存储服务。指标采集由 `xray-exporter` 等组件负责。
+## 🌟 核心能力
 
-> **English**: XConnect Edge Agent is the node-side control-plane agent for XConnect. It authenticates with `accounts`, synchronizes node and client configuration, reports node health and sync status, and manages the local Xray runtime behind Caddy.
+- 单命令安装或升级 Xray、Caddy 和 Edge Agent；支持 AMD64/ARM64。
+- 自动申请和续期 HTTPS 证书，支持 XHTTP 与 TCP Vision。
+- 可完全离线运行，也可接入云端或私有 `accounts` 控制面。
+- 可选安装 Xray/Node/Process/Blackbox/Vector 监控组件。
 
----
+## 🧩 部署模式
 
-## 🌟 核心亮点
+| 模式 | 拓扑 | 适用场景 |
+| --- | --- | --- |
+| 完全单节点自建 | Proxy Server + 本地控制组件 | 个人或离线环境 |
+| 共享版 Proxy Server | 单节点 + 共享 Full 控制端 | 多节点共享控制面 |
+| 团队版 Proxy Server | 单节点 + Full 控制端 + 团队/租户隔离 | 企业团队和专属节点 |
 
-- ⚡ **零门槛 3 分钟一键自建**：单行 Shell 命令全自动安装，无需手动编辑繁琐 JSON。
-- 🔒 **全自动 HTTPS / TLS 证书**：集成 Caddy 自动化 Let's Encrypt 证书签发与平滑续期。
-- 🏎️ **内核级低延迟优化**：安装时自动应用 Linux BBR 拥塞控制 + FQ 队列调度优化。
-- 📦 **双架构支持**：完美适配主流 Linux 发行版（Ubuntu / Debian / CentOS / Alpine），支持 AMD64 (x86_64) 与 ARM64 (aarch64)。
-- 🔄 **灵活的控制面接入**：既支持 100% 离线独立自建，也支持通过 `accounts` 与 [XConnect 控制台](https://console.svc.plus/products/xconnect) 或私有部署后端实现节点集群管理。
+Proxy Server 与 Full 控制端是两个独立部署目标。区域、节点池、控制端地址和团队范围由环境配置提供；凭据只在运行时注入，不写入脚本、README 或 Git。
 
----
+## 🚀 快速开始
 
-## 🧭 普通用户向导：3 步极速上手
+### 1. 准备域名
 
-```mermaid
-flowchart LR
-    Step1["1️⃣ 域名 DNS 解析<br/>A 记录指向 VPS IP"] --> Step2["2️⃣ 运行一键命令<br/>自动配置 TLS/Xray/BBR"] --> Step3["3️⃣ 复制节点链接<br/>导入客户端即可使用"]
-```
+将节点域名的 **A 记录** 指向 VPS 公网 IP，并放行 `80/443`。在 Debian/Ubuntu VPS 上以 root 执行安装命令。
 
-### 第 1 步：准备域名解析
-准备一个你拥有的域名（例如 `xhttp.example.com`），在你的域名 DNS 提供商处添加一条 **A 记录**，将该域名解析到你的 **VPS 服务器公网 IP**。
-
-> 💡 *确保解析已生效（可以通过 `ping xhttp.example.com` 确认返回的是你 VPS 的 IP 地址）。*
-
----
-
-### 托管节点：一键接入 Accounts 与监控
-
-在 Debian/Ubuntu 的目标节点以 root 运行。先由 Vault 在当前 root 会话注入并 **export** 以下运行时变量：`AGENT_PROXY_DOMAIN`（节点域名）、`AUTH_URL`（Accounts 地址）、`INTERNAL_SERVICE_TOKEN`（节点凭据）、`VECTOR_AUTH_USER` 和 `VECTOR_AUTH_PASSWORD`（监控写入凭据）。也可仅由同一 Vault 会话导出 `VAULT_ADDR` 与 `VAULT_TOKEN`：组合安装会自动从 `kv/data/CICD/observability` 的 `user`、`password` 字段读取监控凭据；可用 `VAULT_OBSERVABILITY_SECRET_PATH` 覆盖 KV v2 路径。不要把真实凭据粘贴到命令行参数、Shell 历史或仓库。
+### 2. 独立节点
 
 ```bash
-# 上述变量已由 Vault 注入当前 root 会话并导出
+curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
+  bash -s -- --node xhttp.example.com --standalone
+```
+
+### 3. 托管、共享或团队节点
+
+先由 Vault/Secret Manager 注入以下环境变量，再执行安装；不要把真实值放进命令行历史：
+
+```bash
+export AGENT_PROXY_DOMAIN="xhttp.example.com"
+export AUTH_URL="https://accounts.example.com"
+export AGENT_REGION="jp"
+export AGENT_POOL="jp-main"
+export INTERNAL_SERVICE_TOKEN="<runtime-secret>"
+
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
   bash -s -- --node "$AGENT_PROXY_DOMAIN" --with-observability
+
+unset INTERNAL_SERVICE_TOKEN
 ```
 
-`--with-observability` 安装 Caddy、Xray 和 Edge Agent，并调用 [playbooks/deploy_observability_agent.yml](https://github.com/ai-workspace-infra/playbooks/blob/main/deploy_observability_agent.yml)，只部署当前节点。监控包括 Xray Exporter、Node Exporter、Process Exporter、Blackbox 和 Vector；本地采集端口保持绑定回环地址，同时采集 Edge Agent、Caddy 和 Xray 的 systemd 日志，兼容没有 syslog 文件的 Debian 节点。Vector 向 [observability.svc.plus](https://observability.svc.plus/) 的指标和日志入口推送数据，`instance` 与 `service_domain` 标签标识节点，无需增加中心端抓取清单。
+`--with-observability` 会在当前节点安装监控组件；它不替代控制端部署。团队版节点应使用专属节点凭据和对应团队范围，不能回退到公共节点。
 
-可选变量：`OBSERVABILITY_ENDPOINT` 覆盖 HTTPS 监控地址，`DEPLOY_ENV` 设置环境标签，`OBSERVABILITY_PLAYBOOKS_REF` 指定经过审查的完整 40 位 playbooks commit SHA。默认固定 playbooks 版本，避免安装时漂移。组合安装提供 `BILLING_SERVICE_URL` 时默认开启 Billing 快照转发，入口为该地址的 `/v1/ingest/snapshots`；可用 `VECTOR_BILLING_INGEST_ENABLED=false` 关闭。已有计费快照链路时，继续导出 `VECTOR_BILLING_INGEST_ENABLED=true`、`VECTOR_BILLING_INGEST_URL` 和 `VECTOR_SNAPSHOT_URL=http://127.0.0.1:8686`，以保留 Vector 向 Billing 的转发。Exporter 自动检测当前 Xray Stats API 端口，兼容旧节点的 28080/28081。缺少接入或监控凭据时，组合安装会在修改节点前退出；不传该选项保留原安装流程。该选项不与 `--standalone` 或 `--upgrade-only` 同用。
-
-部署后脚本检查必需服务、本地指标入口和一次真实的认证日志写入。检查失败返回非零；重复执行可以重试监控部署。也可以在已安装的节点单独运行仓库中的 `scripts/setup-observability.sh`（同样需要上述已导出的变量）。Ansible 临时清单只含当前节点，结束后删除，不写入凭据。
-
-验收时还需确认 Accounts 收到当前节点的新心跳，并在监控平台按节点 `instance` 查询新指标和日志。服务 active、日志写入返回成功，都不能证明所有采集链路或仪表盘已经正常。未提供目标节点和 Vault 运行时凭据时，只能验证安装代码，不能宣称完成线上注册。
-
-### 第 2 步：执行一键部署脚本
-
-通过 SSH 连接进入你的 VPS，粘贴并执行以下命令（将 `xhttp.example.com` 替换为你的真实域名）：
-
-已有 `agent-svc-plus` 安装的节点重新执行此命令即可迁移到 `xconnect-edge-agent` 服务名；脚本会先停止旧服务，避免同一节点重复上报。
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node xhttp.example.com
-```
-
-> **提示（纯独立运行）**：如果你希望完全本地独立运行（不连接任何云端管理端），可直接加上 `--standalone` 参数：
-> ```bash
-> curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
->   bash -s -- --node xhttp.example.com --standalone
-> ```
-
----
-
-### 第 3 步：获取节点链接，连接客户端
-
-部署完成后可从安装仓库运行只读巡检脚本，检查 Caddy 日志、journald 限额、代理连通性、磁盘和内存：
+### 4. 验证和导入客户端
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/verify-log-tune.sh | sudo bash
 ```
 
-脚本不会修改配置。可通过 `HOST`、`JOURNAL_MAX`、`KEEP_DAYS` 和 `CADDY_RSS_WARN_MB` 调整检查目标。
+脚本只读检查服务、日志、磁盘、内存和代理连通性，并输出 VLESS 导入链接。客户端可使用 [XConnect App](https://github.com/ai-workspace-xstream/xconnect-app/releases) 或兼容 VLESS 的 v2rayN、v2rayNG、Sing-box、Surge 等。
 
-脚本运行完成后，终端会自动打印出 **VLESS 节点导入链接**（包括 XHTTP 模式与 TCP Vision 模式）和对应的 UUID。
+> 运行成功只代表节点本地服务可用；托管节点还需在 Accounts/Full 控制端确认节点心跳、团队授权和配置同步。
 
-#### 客户端连接方式推荐：
+## 🔗 相关项目与资源
 
-1. 🌟 **自研客户端（推荐体验）**：
-   - 下载 **[XConnect App 客户端 (85% 完成度预览版)](https://github.com/ai-workspace-xstream/xconnect-app/releases/tag/main-149)**
-   - 支持 macOS（Apple Silicon）、Windows、iOS 与 Linux。界面极简，内置系统级网络代理与诊断工具。
-2. 📱 **通用第三方客户端**：
-   - 复制终端输出的 `vless://...` 链接，在 **OneXray**、**v2rayN** (Windows)、**v2rayNG** (Android)、**Sing-box** 或 **Surge** 中选择「从剪贴板导入」即可直接使用！
+- [XConnect Console](https://console.svc.plus/products/xconnect)
+- [XConnect App](https://github.com/ai-workspace-xstream/xconnect-app)
+- [Accounts 控制面](https://github.com/ai-workspace-services/accounts)
+- [Billing Service](https://github.com/ai-workspace-services/billing-service)
+- [Content Service](https://github.com/ai-workspace-services/content-service)
+- [Edge Gateway](https://github.com/ai-workspace-services/edge-gateway)
+- [GitOps 拓扑声明](https://github.com/ai-workspace-infra/gitops)
+- [Playbooks 主机部署](https://github.com/ai-workspace-infra/playbooks)
+- [Platform Ops Toolkit 流水线](https://github.com/ai-workspace-infra/platform-ops-toolkit)
+- [架构与设计](docs/design.md)
 
----
+<details>
+<summary>📚 扩展阅读：高级部署与运维</summary>
 
-## 🛠️ 部署模式对比与使用场景
+以下内容面向平台运维和私有化部署场景；普通用户只需完成上面的快速开始。
 
-| 场景 | 部署命令 / 说明 | 适用对象 |
-| :--- | :--- | :--- |
-| **1. 极简一键自建** | `curl ... \| bash -s -- --node <your-domain> --standalone` | 个人开发者、小白用户，单机独立加速 |
-| **2. 托管云端同步** | `AUTH_URL=<url> INTERNAL_SERVICE_TOKEN=<token> curl ... \| bash -s -- --node <your-domain>` | 与 [console.svc.plus](https://console.svc.plus/products/xconnect) 联动，自动同步多租户配置 |
-| **3. 全栈开源私有化** | 配合 [portal](https://github.com/ai-workspace-xstream/portal) 与 [postgresql.svc.plus](https://github.com/ai-workspace-xstream/postgresql.svc.plus) 自建完整平台 | 企业 IT、团队协作与极客全栈 |
+高级章节索引：
+
+- [Accounts 服务对接部署](#-与-accounts-服务对接部署)
+- [常用进阶参数与配置](#️-常用进阶参数与配置)
+- [边缘与容器化部署](#️-边缘与容器化部署cloudflare--cloud-run)
+- [常见问题排查](#-常见问题排查faq)
 
 ---
 
@@ -197,8 +190,12 @@ Shell 环境传入；不要把真实域名、token 或 Vault 配置固定写进�
 
 ```bash
 export AGENT_PROXY_DOMAIN="<本节点的代理域名>"
+export AGENT_ENTRY_POINT="<区域用户入口，例如 jp-xconnect.onwalk.net>"
 export AGENT_REGION="<部署区域代码，例如 hk 或 jpn-tky>"
 export AGENT_POOL="<区域内的 pool 标识，例如 hk-main>"
+export AGENT_RESOURCE_CLASS="<shared、free、plus 或 team>"
+# team 节点必须设置；公共节点保持为空或不要设置
+export AGENT_TEAM_ID="<Accounts 中登记的团队 ID>"
 export AUTH_URL="https://accounts.example.com"
 export BILLING_SERVICE_URL="https://billing.example.com"
 
@@ -214,7 +211,10 @@ echo
 export VAULT_TOKEN
 
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node "$AGENT_PROXY_DOMAIN"
+  bash -s -- --node "$AGENT_PROXY_DOMAIN" \
+    --entry-point "$AGENT_ENTRY_POINT" --region "$AGENT_REGION" \
+    --pool "$AGENT_POOL" --resource-class "$AGENT_RESOURCE_CLASS" \
+    --team-id "$AGENT_TEAM_ID"
 
 unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 ```
@@ -228,6 +228,7 @@ unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 - 安装或更新 Xray、Caddy 和 `xconnect-edge-agent`；
 - 生成 `/etc/agent/account-agent.yaml`，把 `agent.id` 写成 `--node` 的值；
 - 将 `AGENT_REGION`、`AGENT_POOL` 写入 `agent.region`、`agent.pool`，供状态上报和区域入口汇总使用；未提供时保留节点已有值。
+- 将 `AGENT_ENTRY_POINT` 写入 `agent.entryPoint`，把区域用户入口与实际节点域名分开；`AGENT_RESOURCE_CLASS` 和 `AGENT_TEAM_ID` 写入同步范围并校验团队关系。
 - 将 `AUTH_URL` 写入 `agent.controllerUrl`，将 `INTERNAL_SERVICE_TOKEN` 写入 `agent.apiToken`；
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
@@ -256,8 +257,11 @@ log:
 
 agent:
   id: "hk-xhttp.example.com"
+  entryPoint: "hk-xconnect.example.com"
   region: "hk"
   pool: "hk-main"
+  resourceClass: "plus"
+  teamId: ""
   controllerUrl: "https://accounts.example.com"
   apiToken: "<accounts 的 Agent token>"
   httpTimeout: 15s
@@ -274,7 +278,7 @@ billing:
   reconcileInterval: 5m
 ```
 
-`region` 是实际部署区域代码；`pool` 是该区域内的逻辑 pool 标识，同一 pool 的多个节点使用相同值。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`，容器可注入 `AGENT_REGION`、`AGENT_POOL`。
+`region` 是实际部署区域代码；`pool` 是该区域内的逻辑 pool 标识，同一 pool 的多个节点使用相同值；`entryPoint` 是用户连接的稳定区域入口。`resourceClass` 为 `shared`、`free`、`plus` 或 `team`，其中 `team` 必须同时配置 `teamId`，公共类型不得携带团队 ID。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`、`agent_entry_point`、`agent_resource_class`、`agent_team_id`，容器可注入对应的 `AGENT_*` 环境变量。
 
 修改后重启并检查服务：
 
@@ -446,11 +450,4 @@ journalctl -u xconnect-edge-agent -n 50 --no-pager
 XHTTP 基于 HTTP/3 与 HTTP/2 传输封装，在面对复杂的跨国网络抖动与封锁环境时，具有更高的抗丢包能力与更佳的多路复用性能，特别适合 AI 交互（如 Cursor 流式代码补全、Claude/ChatGPT 长上下文流式对话）等低延迟敏感型场景。
 </details>
 
----
-
-## 🔗 相关项目与资源
-
-- 🌐 **[XConnect 控制台 (云端免运维)](https://console.svc.plus/products/xconnect)**
-- 📱 **[XConnect 客户端下载 (85% 完成度版本)](https://github.com/ai-workspace-xstream/xconnect-app/releases/tag/main-149)**
-- 🏢 **[AI Workspace XStream 完整开源组织](https://github.com/ai-workspace-xstream)**
-- 📖 **[架构与设计规范](docs/design.md)**
+</details>

@@ -15,11 +15,14 @@ import (
 	"time"
 
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
 )
 
 // ClientOptions configures the HTTP client used to communicate with the
 // controller.
 type ClientOptions struct {
+	ResourceClass      string
+	TeamID             string
 	Timeout            time.Duration
 	InsecureSkipVerify bool
 	UserAgent          string
@@ -28,6 +31,7 @@ type ClientOptions struct {
 
 // Client issues authenticated requests against the controller.
 type Client struct {
+	scope     agentproto.UserScope
 	baseURL   *url.URL
 	token     string
 	http      *http.Client
@@ -37,6 +41,9 @@ type Client struct {
 
 // NewClient constructs a client for the provided controller URL and token.
 func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
+	if err := (config.Agent{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID}).ValidateUserScope(); err != nil {
+		return nil, err
+	}
 	trimmedURL := strings.TrimSpace(baseURL)
 	if trimmedURL == "" {
 		return nil, errors.New("controller url is required")
@@ -79,6 +86,7 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 
 	return &Client{
 		baseURL:   parsed,
+		scope:     agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID},
 		token:     token,
 		http:      client,
 		userAgent: userAgent,
@@ -126,6 +134,9 @@ func (c *Client) ListClients(ctx context.Context) (agentproto.ClientListResponse
 		_ = resp.Body.Close()
 		if err != nil {
 			return agentproto.ClientListResponse{}, fmt.Errorf("decode client list: %w", err)
+		}
+		if c.scope.ResourceClass != "" && (payload.Scope == nil || *payload.Scope != c.scope) {
+			return agentproto.ClientListResponse{}, errors.New("controller user scope missing or mismatched; refusing Xray synchronization")
 		}
 		return payload, nil
 	}
@@ -237,6 +248,13 @@ func (c *Client) applyHeaders(req *http.Request) {
 	req.Header.Set("X-Service-Token", c.token)
 	if c.agentID != "" {
 		req.Header.Set("X-Agent-ID", c.agentID)
+	}
+	// Expectations only: Accounts must authorize from the enrolled agent credential.
+	if c.scope.ResourceClass != "" {
+		req.Header.Set("X-Agent-Resource-Class", c.scope.ResourceClass)
+	}
+	if c.scope.TeamID != "" {
+		req.Header.Set("X-Agent-Team-ID", c.scope.TeamID)
 	}
 	req.Header.Set("User-Agent", c.userAgent)
 }

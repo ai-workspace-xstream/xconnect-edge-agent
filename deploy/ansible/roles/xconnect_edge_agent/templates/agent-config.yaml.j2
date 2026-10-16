@@ -4,12 +4,15 @@ log:
   level: {{ agent_log_level }}
 
 agent:
+  resourceClass: {{ agent_resource_class | to_json }}
+  teamId: {{ agent_team_id | to_json }}
   role: "{{ agent_role }}"
   id: "{{ agent_id }}"
   domain: "{{ agent_id }}"
   nodeId: "{{ agent_node_id }}"
   region: {{ agent_region | to_json }}
   pool: {{ agent_pool | to_json }}
+  entryPoint: {{ agent_entry_point | to_json }}
   provider: "{{ agent_provider }}"
   product: "{{ agent_product }}"
   lineCode: "{{ agent_line_code }}"
@@ -34,11 +37,18 @@ xray:
   sync:
     enabled: true
     interval: {{ xray_sync_interval }}
+{% if xray_sync_tuning %}
+    tuning: {{ xray_sync_tuning | to_json }}
+{% endif %}
     targets:
       - name: "xhttp"
         outputPath: "{{ xray_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.xhttp.template.json"
+{% if xray_validate_enabled %}
+        validateCommand: ["{{ xray_executable }}", "run", "-test", "-config", "{config}"]
+{% else %}
         validateCommand: []
+{% endif %}
         restartCommand:
           - "systemctl"
           - "restart"
@@ -50,7 +60,11 @@ xray:
       - name: "tcp"
         outputPath: "{{ xray_tcp_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.tcp.template.json"
+{% if xray_validate_enabled %}
+        validateCommand: ["{{ xray_executable }}", "run", "-test", "-config", "{config}"]
+{% else %}
         validateCommand: []
+{% endif %}
         restartCommand:
           - "systemctl"
           - "restart"

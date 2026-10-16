@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
 type Config struct {
@@ -22,6 +25,8 @@ type Log struct {
 }
 
 type Agent struct {
+	ResourceClass     string        `yaml:"resourceClass"`
+	TeamID            string        `yaml:"teamId"`
 	OverlayStatusPath string        `yaml:"overlayStatusPath"`
 	Role              string        `yaml:"role"`
 	ID                string        `yaml:"id"`
@@ -58,6 +63,24 @@ func (a Agent) EffectiveRole() string {
 	return a.Role
 }
 
+// ValidateUserScope rejects ambiguous pool configuration before any synchronization.
+// Empty scope retains compatibility with existing controller deployments.
+func (a Agent) ValidateUserScope() error {
+	switch a.ResourceClass {
+	case "", "shared", "free", "plus":
+		if a.TeamID != "" {
+			return fmt.Errorf("agent.teamId requires resourceClass team")
+		}
+	case "team":
+		if a.TeamID == "" || len(a.TeamID) > 128 || strings.ContainsAny(a.TeamID, " \t\r\n") {
+			return fmt.Errorf("agent.teamId is required for resourceClass team and must contain no whitespace")
+		}
+	default:
+		return fmt.Errorf("agent.resourceClass must be shared, free, plus, or team")
+	}
+	return nil
+}
+
 func (a Agent) ValidateRole() error {
 	switch a.EffectiveRole() {
 	case RoleGateway, RoleOne, RoleAgentProxy:
@@ -88,6 +111,9 @@ type XraySync struct {
 	Interval time.Duration `yaml:"interval"`
 	// Targets allows defining multiple Xray configuration files to sync.
 	Targets []SyncTarget `yaml:"targets"`
+	// Tuning adjusts allowlisted Xray runtime knobs on every target. Tuning
+	// from the controller overrides it field by field.
+	Tuning *xrayconfig.ServerTuning `yaml:"tuning"`
 
 	// Legacy fields for backward compatibility or simple single-target config
 	OutputPath      string   `yaml:"outputPath"`
@@ -143,6 +169,15 @@ func LoadReader(r io.Reader) (*Config, error) {
 	}
 	if role := os.Getenv("XCONNECT_ROLE"); role != "" {
 		cfg.Agent.Role = role
+	}
+	if value, ok := os.LookupEnv("AGENT_RESOURCE_CLASS"); ok {
+		cfg.Agent.ResourceClass = value
+	}
+	if value, ok := os.LookupEnv("AGENT_TEAM_ID"); ok {
+		cfg.Agent.TeamID = value
+	}
+	if err := cfg.Agent.ValidateUserScope(); err != nil {
+		return nil, err
 	}
 	if err := cfg.Agent.ValidateRole(); err != nil {
 		return nil, err

@@ -18,11 +18,15 @@ xconnect_edge_agent_log_dir: "/var/log/xconnect-edge-agent"
 xconnect_edge_agent_data_dir: "/opt/xconnect-edge-agent"
 
 # Agent configuration
+# Empty preserves legacy sync. Enable only after Accounts supports authorized scopes.
+agent_resource_class: "{{ xconnect_resource_class | default(lookup('ansible.builtin.env', 'AGENT_RESOURCE_CLASS') | default('', true), true) }}"
+agent_team_id: "{{ xconnect_team_id | default(lookup('ansible.builtin.env', 'AGENT_TEAM_ID') | default('', true), true) }}"
 agent_role: "agent-proxy"
 agent_id: "us-xhttp.svc.plus"
 agent_node_id: "{{ agent_id }}"
 agent_region: "{{ xconnect_region | default(lookup('ansible.builtin.env', 'AGENT_REGION') | default('', true), true) }}"
 agent_pool: "{{ xconnect_pool | default(lookup('ansible.builtin.env', 'AGENT_POOL') | default('', true), true) }}"
+agent_entry_point: "{{ xconnect_entry_point | default(lookup('ansible.builtin.env', 'AGENT_ENTRY_POINT') | default('', true), true) }}"
 agent_provider: ""
 agent_product: ""
 agent_line_code: ""
@@ -40,8 +44,15 @@ xray_sync_interval: "10m"
 xray_config_path: "/usr/local/etc/xray/config.json"
 xray_tcp_config_path: "/usr/local/etc/xray/tcp-config.json"
 xray_template_dir: "/usr/local/etc/xray/templates"
+xray_executable: "/usr/local/bin/xray"
+# Every rendered config is checked with `xray run -test` on a candidate file
+# before it replaces the live one.
+xray_validate_enabled: true
+# Optional local tuning (xray.sync.tuning); controller tuning overrides it
+# field by field. Empty keeps the template values.
+xray_sync_tuning: {}
 xray_dynamic_users_enabled: true
-xray_dynamic_users_executable: "/usr/local/bin/xray"
+xray_dynamic_users_executable: "{{ xray_executable }}"
 xray_xhttp_api_server: "127.0.0.1:10086"
 xray_tcp_api_server: "127.0.0.1:10087"
 
