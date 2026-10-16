@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,7 @@ func TestScopedSnapshotAdmission(t *testing.T) {
 		{"other team", "team", "team-a", `,"scope":{"resourceClass":"team","teamId":"team-b"}`, false},
 		{"shared cannot broaden free", "free", "", `,"scope":{"resourceClass":"shared"}`, false},
 		{"tenant on public scope", "shared", "", `,"scope":{"resourceClass":"shared","teamId":"team-a"}`, false},
+		{"plus rejects free", "plus", "", `,"scope":{"resourceClass":"free"}`, false},
 		{"missing scope", "plus", "", "", false},
 		{"legacy", "", "", "", true},
 	} {
@@ -40,6 +42,12 @@ func TestScopedSnapshotAdmission(t *testing.T) {
 			snapshot, err := NewHTTPClientSource(client, tracker).FetchSnapshot(context.Background())
 			if (err == nil) != tc.allowed {
 				t.Fatalf("admission = %v, allowed = %v", err, tc.allowed)
+			}
+			if !tc.allowed && (!strings.Contains(err.Error(), "expected resourceClass="+fmt.Sprintf("%q", tc.class)) || strings.Contains(err.Error(), "test-token")) {
+				t.Fatalf("scope failure must identify expected class without credentials: %v", err)
+			}
+			if tc.name == "plus rejects free" && !strings.Contains(err.Error(), `received resourceClass="free"`) {
+				t.Fatalf("scope mismatch must identify received class: %v", err)
 			}
 			if !tc.allowed && (tracker.Snapshot().Revision != "previous" || snapshot.Revision != "") {
 				t.Fatal("rejected response changed sync state")

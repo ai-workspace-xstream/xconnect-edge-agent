@@ -136,7 +136,10 @@ func (c *Client) ListClients(ctx context.Context) (agentproto.ClientListResponse
 			return agentproto.ClientListResponse{}, fmt.Errorf("decode client list: %w", err)
 		}
 		if c.scope.ResourceClass != "" && (payload.Scope == nil || *payload.Scope != c.scope) {
-			return agentproto.ClientListResponse{}, errors.New("controller user scope missing or mismatched; refusing Xray synchronization")
+			if payload.Scope == nil {
+				return agentproto.ClientListResponse{}, fmt.Errorf("controller user scope missing; expected resourceClass=%q teamId=%q; refusing Xray synchronization", c.scope.ResourceClass, c.scope.TeamID)
+			}
+			return agentproto.ClientListResponse{}, fmt.Errorf("controller user scope mismatched; expected resourceClass=%q teamId=%q, received resourceClass=%q teamId=%q; check agent resourceClass and enrolled controller credential scope (pool name does not select scope); refusing Xray synchronization", c.scope.ResourceClass, c.scope.TeamID, payload.Scope.ResourceClass, payload.Scope.TeamID)
 		}
 		return payload, nil
 	}
