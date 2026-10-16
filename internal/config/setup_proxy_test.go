@@ -135,6 +135,7 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 		"install_xray_from_maintained_fork",
 		`bash "${installer}" install --version "${XRAY_RELEASE_TAG}"`,
 		`bash "${installer}" install`,
+		"RELEASE_LATEST=\"$PRE_RELEASE_LATEST\"",
 	} {
 		if !strings.Contains(script, required) {
 			t.Fatalf("missing maintained Xray fork contract: %s", required)
