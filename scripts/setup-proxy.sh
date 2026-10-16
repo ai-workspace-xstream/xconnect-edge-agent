@@ -492,11 +492,11 @@ install_xray_from_maintained_fork() {
     if [ -n "${XRAY_RELEASE_TAG}" ] && [ "${XRAY_RELEASE_TAG}" != "latest" ]; then
         XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
             XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
-            bash "${installer}" @ install --version "${XRAY_RELEASE_TAG}"
+            bash "${installer}" install --version "${XRAY_RELEASE_TAG}"
     else
         XRAY_CORE_API_BASE="https://api.github.com/repos/${XRAY_REPO}/releases" \
             XRAY_CORE_RELEASE_BASE="https://github.com/${XRAY_REPO}/releases" \
-            bash "${installer}" @ install
+            bash "${installer}" install
     fi
 }
 
