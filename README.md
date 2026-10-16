@@ -190,12 +190,14 @@ Shell 环境传入；不要把真实域名、token 或 Vault 配置固定写进�
 
 ```bash
 export AGENT_PROXY_DOMAIN="<本节点的代理域名>"
-export AGENT_ENTRY_POINT="<区域用户入口，例如 jp-xconnect.onwalk.net>"
+export AGENT_ENTRY_POINT="<该节点实际连接域名，例如 jp-xconnect.svc.plus>"
 export AGENT_REGION="<部署区域代码，例如 hk 或 jpn-tky>"
 export AGENT_POOL="<区域内的 pool 标识，例如 hk-main>"
 export AGENT_RESOURCE_CLASS="<shared、free、plus 或 team>"
 # team 节点必须设置；公共节点保持为空或不要设置
 export AGENT_TEAM_ID="<Accounts 中登记的团队 ID>"
+# 不设置 AGENT_RELEASE_TAG / XRAY_RELEASE_TAG 时，分别安装各自仓库的最新 release。
+# 仅在需要固定版本复现或分阶段发布时设置这两个变量。
 export AUTH_URL="https://accounts.example.com"
 export BILLING_SERVICE_URL="https://billing.example.com"
 
@@ -228,7 +230,7 @@ unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 - 安装或更新 Xray、Caddy 和 `xconnect-edge-agent`；
 - 生成 `/etc/agent/account-agent.yaml`，把 `agent.id` 写成 `--node` 的值；
 - 将 `AGENT_REGION`、`AGENT_POOL` 写入 `agent.region`、`agent.pool`，供状态上报和区域入口汇总使用；未提供时保留节点已有值。
-- 将 `AGENT_ENTRY_POINT` 写入 `agent.entryPoint`，把区域用户入口与实际节点域名分开；`AGENT_RESOURCE_CLASS` 和 `AGENT_TEAM_ID` 写入同步范围并校验团队关系。
+- 将 `AGENT_ENTRY_POINT` 写入 `agent.entryPoint`，用于上报该节点实际连接域名；Shared 通用池可以让它与 `AGENT_PROXY_DOMAIN` 相同。`AGENT_RESOURCE_CLASS` 和 `AGENT_TEAM_ID` 写入同步范围并校验团队关系。
 - 将 `AUTH_URL` 写入 `agent.controllerUrl`，将 `INTERNAL_SERVICE_TOKEN` 写入 `agent.apiToken`；
 - 写入 `billing` 调度配置（`baseURL: "${BILLING_SERVICE_URL}"`）；
 - 创建并启用 `xconnect-edge-agent.service`，同时配置 XHTTP/TCP 两套 Xray 同步目标。
@@ -278,7 +280,7 @@ billing:
   reconcileInterval: 5m
 ```
 
-`region` 是实际部署区域代码；`pool` 是该区域内的逻辑 pool 标识，同一 pool 的多个节点使用相同值；`entryPoint` 是用户连接的稳定区域入口。`resourceClass` 为 `shared`、`free`、`plus` 或 `team`，其中 `team` 必须同时配置 `teamId`，公共类型不得携带团队 ID。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`、`agent_entry_point`、`agent_resource_class`、`agent_team_id`，容器可注入对应的 `AGENT_*` 环境变量。
+`region` 是实际部署区域代码；`pool` 是该区域内的逻辑资源池标识，同一池的多个节点使用相同值；`entryPoint` 是用户实际连接的节点域名。`resourceClass` 支持 `shared`（Free + Plus 通用池）、`free`（仅 Free 用户）、`plus`（Plus 用户）和 `team`（指定团队专属池）。当前规划的三类池是 `shared`、`plus` 和 `team`；`free` 仍可用于只承载 Free 用户的独立节点。`team` 必须同时配置 `teamId`，公共类型不得携带团队 ID。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`、`agent_entry_point`、`agent_resource_class`、`agent_team_id`，容器可注入对应的 `AGENT_*` 环境变量。
 
 修改后重启并检查服务：
 

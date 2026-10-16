@@ -131,7 +131,7 @@ func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
 	script := string(scriptBytes)
 	for _, required := range []string{
 		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
-		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-v26.3.27-uat-r3}"`,
+		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-}"`,
 		"install_xray_from_maintained_fork",
 	} {
 		if !strings.Contains(script, required) {

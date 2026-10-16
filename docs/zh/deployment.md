@@ -44,3 +44,31 @@ Ansible inventory 必须只包含对应的单台 VM。缺少节点域名、证�
 - 术语需要与仓库根 README、构建清单和实际目录保持一致。
 - 将上方列出的历史 runbook、spec、子系统说明逐步链接并归并到本页。
 - 每次发布前，依据当前脚本、清单、CI/CD 流程和环境契约重新核对部署步骤。
+# 区域资源池配置
+
+`AGENT_POOL` 是区域内的逻辑池标识；`AGENT_RESOURCE_CLASS` 选择该节点同步的用户范围。正式配置使用三种模式：
+
+| 模式 | 同步用户 | 日本示例池 | 节点域名 |
+| --- | --- | --- | --- |
+| `shared` | Free + Plus 通用用户 | `jp-shared` | `jp-xconnect.svc.plus` |
+| `plus` | Plus 用户，包含 Plus 专属池用户 | `jp-plus` | `jp-plus-xconnect-selfhost-prod-v2-01.svc.plus` |
+| `team` | 指定团队的管理员和成员 | `jp-team` | `jp-team-xconnect-selfhost-prod-v2-01.svc.plus` |
+
+`jp-xconnect.svc.plus` 同时是 Shared 通用池的实际节点域名和通用稳定入口，不再为 Shared 池单独配置另一个域名。Plus 用户可使用 Shared 通用池和 Plus 专属池；Free 用户只使用 Shared 通用池。Team 池只服务指定团队，不接收公共用户。
+
+Agent 配置仍支持 `free` resource class，用于 Free 独立节点；当前三池拓扑将 Free 用户放在 `shared` 通用池，因此不需要额外的 Free 专属池。
+
+Shared 节点示例：
+
+```bash
+export AGENT_PROXY_DOMAIN="jp-xconnect.svc.plus"
+export AGENT_ENTRY_POINT="jp-xconnect.svc.plus"
+export AGENT_REGION="jp"
+export AGENT_POOL="jp-shared"
+export AGENT_RESOURCE_CLASS="shared"
+unset AGENT_TEAM_ID
+```
+
+Plus 节点将域名和池名分别设为 `jp-plus-xconnect-selfhost-prod-v2-01.svc.plus` 与 `jp-plus`，类型设为 `plus`。Team 节点对应 `jp-team-xconnect-selfhost-prod-v2-01.svc.plus`、`jp-team` 和 `team`，并必须设置实际的 `AGENT_TEAM_ID`。
+
+Team 同步范围由 `AGENT_TEAM_ID` 限定，必须与控制面登记的团队授权一致。节点编号使用 `-01`、`-02`、`-03`，在同一区域、类型和环境内递增。
