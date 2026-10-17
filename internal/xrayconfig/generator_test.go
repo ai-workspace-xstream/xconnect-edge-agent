@@ -2,6 +2,7 @@ package xrayconfig
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,34 @@ func TestGeneratorRenderUpdatesClientsInAnyInbound(t *testing.T) {
 	}
 	if len(clients) != 2 {
 		t.Fatalf("expected 2 clients in second inbound, got %d", len(clients))
+	}
+}
+
+func TestManagedTemplatesEnableUserTrafficCounters(t *testing.T) {
+	for _, path := range []string{"", "../../config/xray.xhttp.template.json", "../../config/xray.tcp.template.json"} {
+		t.Run(path, func(t *testing.T) {
+			var definition Definition = DefaultDefinition()
+			if path != "" {
+				raw, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				definition = JSONDefinition{Raw: raw}
+			}
+			raw, err := (Generator{Definition: definition, Domain: "test.example"}).Render([]Client{{ID: "550e8400-e29b-41d4-a716-446655440000", Email: "account-key"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg map[string]any
+			if err := json.Unmarshal(raw, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			level := cfg["policy"].(map[string]any)["levels"].(map[string]any)["0"].(map[string]any)
+			for _, key := range []string{"statsUserUplink", "statsUserDownlink"} {
+				if level[key] != true {
+					t.Fatalf("%s must be enabled", key)
+				}
+			}
+		})
 	}
 }

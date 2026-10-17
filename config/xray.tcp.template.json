@@ -83,6 +83,8 @@
     "policy": {
         "levels": {
             "0": {
+                "statsUserUplink": true,
+                "statsUserDownlink": true,
                 "handshake": 2,
                 "connIdle": 120
             }

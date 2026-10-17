@@ -58,6 +58,8 @@ const defaultTemplate = `{
   "policy": {
     "levels": {
       "0": {
+        "statsUserUplink": true,
+        "statsUserDownlink": true,
         "bufferSize": 512
       }
     }
