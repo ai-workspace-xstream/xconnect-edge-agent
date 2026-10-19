@@ -10,7 +10,7 @@ func TestUserScopeValidation(t *testing.T) {
 		class, team string
 		valid       bool
 	}{
-		{"", "", true}, {"shared", "", true}, {"free", "", true}, {"plus", "", true},
+		{"", "", true}, {"shared", "", true}, {"free", "", true}, {"plus", "", true}, {"pro", "", true},
 		{"team", "team-a", true}, {"team", "", false}, {"plus", "team-a", false},
 		{"", "team-a", false}, {"premium", "", false}, {"team", "a\nb", false},
 	} {

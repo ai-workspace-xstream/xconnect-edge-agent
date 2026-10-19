@@ -193,7 +193,7 @@ export AGENT_PROXY_DOMAIN="<本节点的代理域名>"
 export AGENT_ENTRY_POINT="<该节点实际连接域名，例如 jp-xconnect.svc.plus>"
 export AGENT_REGION="<部署区域代码，例如 hk 或 jpn-tky>"
 export AGENT_POOL="<区域内的 pool 标识，例如 hk-main>"
-export AGENT_RESOURCE_CLASS="<shared、free、plus 或 team>"
+export AGENT_RESOURCE_CLASS="<shared、free、plus、pro 或 team>"
 # team 节点必须设置；公共节点保持为空或不要设置
 export AGENT_TEAM_ID="<Accounts 中登记的团队 ID>"
 # 不设置 AGENT_RELEASE_TAG / XRAY_RELEASE_TAG 时，分别安装各自仓库的最新 release。
@@ -281,7 +281,7 @@ billing:
   reconcileInterval: 5m
 ```
 
-`region` 是实际部署区域代码；`pool` 是该区域内的逻辑资源池标识，同一池的多个节点使用相同值；`entryPoint` 是用户实际连接的节点域名。`resourceClass` 支持 `shared`（Free + Plus 通用池）、`free`（仅 Free 用户）、`plus`（Plus 用户）和 `team`（指定团队专属池）。当前规划的三类池是 `shared`、`plus` 和 `team`；`free` 仍可用于只承载 Free 用户的独立节点。`team` 必须同时配置 `teamId`，公共类型不得携带团队 ID。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`、`agent_entry_point`、`agent_resource_class`、`agent_team_id`，容器可注入对应的 `AGENT_*` 环境变量。
+`region` 是实际部署区域代码；`pool` 是该区域内的逻辑资源池标识，同一池的多个节点使用相同值；`entryPoint` 是用户实际连接的节点域名。`resourceClass` 支持 `shared`（Free + Plus + Pro 通用池）、`free`（仅 Free 用户）、`plus`（Plus 用户）、`pro`（Pro 用户）和 `team`（指定团队专属池）。公共池支持 `shared`、`plus`、`pro`，团队池使用 `team`；`free` 仍可用于只承载 Free 用户的独立节点。`team` 必须同时配置 `teamId`，公共类型不得携带团队 ID。模板中的空值需要由部署环境或 inventory 提供，不能仅靠 `agent.id` 推断。Ansible 可设置 `agent_region`、`agent_pool`、`agent_entry_point`、`agent_resource_class`、`agent_team_id`，容器可注入对应的 `AGENT_*` 环境变量。
 
 修改后重启并检查服务：
 

@@ -2,7 +2,7 @@
 - name: Validate requested user scope before changing the node
   ansible.builtin.assert:
     that:
-      - agent_resource_class in ['', 'shared', 'free', 'plus', 'team']
+      - agent_resource_class in ['', 'shared', 'free', 'plus', 'pro', 'team']
       - (agent_resource_class == 'team' and (agent_team_id | length > 0)) or (agent_resource_class != 'team' and agent_team_id == '')
       - agent_team_id is match('^[a-zA-Z0-9._-]{0,128}$')
     fail_msg: "A team node requires its enrolled team ID; public nodes must not carry a team ID."

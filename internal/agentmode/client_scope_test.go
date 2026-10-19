@@ -16,6 +16,7 @@ func TestScopedSnapshotAdmission(t *testing.T) {
 	}{
 		{"free", "free", "", `,"scope":{"resourceClass":"free"}`, true},
 		{"plus", "plus", "", `,"scope":{"resourceClass":"plus"}`, true},
+		{"pro", "pro", "", `,"scope":{"resourceClass":"pro"}`, true},
 		{"single public node", "shared", "", `,"scope":{"resourceClass":"shared"}`, true},
 		{"team", "team", "team-a", `,"scope":{"resourceClass":"team","teamId":"team-a"}`, true},
 		{"other team", "team", "team-a", `,"scope":{"resourceClass":"team","teamId":"team-b"}`, false},
