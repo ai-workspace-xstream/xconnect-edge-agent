@@ -46,11 +46,12 @@ Ansible inventory 必须只包含对应的单台 VM。缺少节点域名、证�
 - 每次发布前，依据当前脚本、清单、CI/CD 流程和环境契约重新核对部署步骤。
 # 区域资源池配置
 
-`AGENT_POOL` 是区域内的逻辑池标识；`AGENT_RESOURCE_CLASS` 选择该节点同步的用户范围。正式配置使用三种模式：
+`AGENT_POOL` 是区域内的逻辑池标识；`AGENT_RESOURCE_CLASS` 选择该节点同步的用户范围。支持以下资源类型：
 
 | 模式 | 同步用户 | 日本示例池 | 节点域名 |
 | --- | --- | --- | --- |
-| `shared` | Free + Plus 通用用户 | `jp-shared` | `jp-xconnect.svc.plus` |
+| `pro` | Pro 订阅用户 | `jp-pro` | 按部署配置 |
+| `shared` | Free + Plus + Pro 通用用户 | `jp-shared` | `jp-xconnect.svc.plus` |
 | `plus` | Plus 用户，包含 Plus 专属池用户 | `jp-plus` | `jp-plus-xconnect-selfhost-prod-v2-01.svc.plus` |
 | `team` | 指定团队的管理员和成员 | `jp-team` | `jp-team-xconnect-selfhost-prod-v2-01.svc.plus` |
 

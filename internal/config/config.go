@@ -25,7 +25,7 @@ type Log struct {
 }
 
 type Agent struct {
-	// ResourceClass selects the user sync scope: shared (Free + Plus), plus, or team.
+	// ResourceClass selects the user sync scope: shared, free, plus, pro, or team.
 	ResourceClass     string        `yaml:"resourceClass"`
 	TeamID            string        `yaml:"teamId"`
 	OverlayStatusPath string        `yaml:"overlayStatusPath"`
@@ -68,7 +68,7 @@ func (a Agent) EffectiveRole() string {
 // Empty scope retains compatibility with existing controller deployments.
 func (a Agent) ValidateUserScope() error {
 	switch a.ResourceClass {
-	case "", "shared", "free", "plus":
+	case "", "shared", "free", "plus", "pro":
 		if a.TeamID != "" {
 			return fmt.Errorf("agent.teamId requires resourceClass team")
 		}
@@ -77,7 +77,7 @@ func (a Agent) ValidateUserScope() error {
 			return fmt.Errorf("agent.teamId is required for resourceClass team and must contain no whitespace")
 		}
 	default:
-		return fmt.Errorf("agent.resourceClass must be shared, free, plus, or team")
+		return fmt.Errorf("agent.resourceClass must be shared, free, plus, pro, or team")
 	}
 	return nil
 }
