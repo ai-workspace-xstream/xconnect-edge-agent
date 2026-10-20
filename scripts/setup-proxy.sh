@@ -109,20 +109,18 @@ validate_agent_scope() {
     local value_name value
 
     case "$RESOURCE_CLASS" in
-        ""|shared|free|plus)
+        ""|shared|free|plus|pro)
             if [ -n "$TEAM_ID" ]; then
                 echo "A team ID is only valid with --resource-class team." >&2
                 return 1
             fi
             ;;
         team)
-            if [ -z "$TEAM_ID" ]; then
-                echo "--resource-class team requires --team-id or AGENT_TEAM_ID." >&2
-                return 1
-            fi
+            # Team ID is only a suggestion; Accounts administrators assign ownership.
+            :
             ;;
         *)
-            echo "--resource-class must be shared, free, plus, or team." >&2
+            echo "--resource-class must be shared, free, plus, pro, or team." >&2
             return 1
             ;;
     esac
@@ -899,7 +897,7 @@ Env (optional):
   AGENT_ENTRY_POINT           # actual node connection domain; can match AGENT_PROXY_DOMAIN
   AGENT_REGION                # deployment region code, e.g. hk or jpn-tky
   AGENT_RESOURCE_CLASS        # shared (Free + Plus), free, plus, or team
-  AGENT_TEAM_ID               # required only for team; enrolled tenant ID
+  AGENT_TEAM_ID               # optional suggested team ID; assigned by an administrator
   AGENT_POOL                  # logical pool identifier within the region
   AGENT_RELEASE_TAG=v2026.10.10-r1  # optional: pin an agent release
   XRAY_REPO=ai-workspace-xstream/Xray-core

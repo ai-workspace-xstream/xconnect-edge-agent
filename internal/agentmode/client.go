@@ -135,7 +135,22 @@ func (c *Client) ListClients(ctx context.Context) (agentproto.ClientListResponse
 		if err != nil {
 			return agentproto.ClientListResponse{}, fmt.Errorf("decode client list: %w", err)
 		}
-		if c.scope.ResourceClass != "" && (payload.Scope == nil || *payload.Scope != c.scope) {
+		if payload.EnrollmentStatus != "" {
+			// Administrator assignment is authoritative for managed team nodes.
+			// Pending/revoked snapshots must be empty and applied to remove old users.
+			valid := c.scope.ResourceClass == "team" && payload.Scope != nil && payload.Scope.ResourceClass == "team"
+			switch payload.EnrollmentStatus {
+			case "approved":
+				valid = valid && payload.Scope.TeamID != ""
+			case "pending", "rejected", "revoked":
+				valid = valid && len(payload.Clients) == 0 && payload.Total == 0 && payload.Scope.TeamID == ""
+			default:
+				valid = false
+			}
+			if !valid {
+				return agentproto.ClientListResponse{}, errors.New("invalid controller team enrollment snapshot; refusing Xray synchronization")
+			}
+		} else if c.scope.ResourceClass != "" && (payload.Scope == nil || *payload.Scope != c.scope) {
 			if payload.Scope == nil {
 				return agentproto.ClientListResponse{}, fmt.Errorf("controller user scope missing; expected resourceClass=%q teamId=%q; refusing Xray synchronization", c.scope.ResourceClass, c.scope.TeamID)
 			}
@@ -192,6 +207,9 @@ func (c *Client) WatchUserConfigEvents(ctx context.Context, onChange func(string
 	}
 	if ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if resp.Header.Get("X-Agent-Event-Mode") == "poll" {
+		return nil
 	}
 	return errors.New("controller event stream closed")
 }

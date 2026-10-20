@@ -164,6 +164,7 @@ func TestSetupProxyAcceptsRegionalScopeArguments(t *testing.T) {
 		"--resource-class", "plus",
 	)
 	cmd.Env = append(os.Environ(),
+		"XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1",
 		"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
 		"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
 	)
@@ -174,12 +175,12 @@ func TestSetupProxyAcceptsRegionalScopeArguments(t *testing.T) {
 
 func TestSetupProxyRejectsMismatchedTeamScopeArguments(t *testing.T) {
 	cases := [][]string{
-		{"--print-arch", "--resource-class", "team"},
 		{"--print-arch", "--resource-class", "free", "--team-id", "team-a"},
 	}
 	for _, args := range cases {
 		cmd := exec.Command("bash", append([]string{"../../scripts/setup-proxy.sh"}, args...)...)
 		cmd.Env = append(os.Environ(),
+			"XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1",
 			"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
 			"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
 		)
@@ -233,5 +234,13 @@ func TestSetupProxyVectorBillingMigration(t *testing.T) {
 				previous = string(data)
 			}
 		})
+	}
+}
+
+func TestSetupProxyAcceptsUnassignedTeamNode(t *testing.T) {
+	cmd := exec.Command("bash", "../../scripts/setup-proxy.sh", "--print-arch", "--resource-class", "team")
+	cmd.Env = append(os.Environ(), "XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1", "AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("unassigned team node rejected: %v %s", err, out)
 	}
 }

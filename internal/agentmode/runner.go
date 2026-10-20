@@ -278,7 +278,9 @@ func runUserConfigEventWatcherWithRetry(ctx context.Context, client *Client, syn
 		if ctx.Err() != nil {
 			return
 		}
-		logger.Warn("controller user-config event stream unavailable; periodic fallback remains active", "err", err)
+		if err != nil {
+			logger.Warn("controller user-config event stream unavailable; periodic fallback remains active", "err", err)
+		}
 		timer := time.NewTimer(retryDelay)
 		select {
 		case <-ctx.Done():
@@ -351,6 +353,11 @@ func runStatusReporter(ctx context.Context, client *Client, tracker *syncTracker
 
 func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterval time.Duration) agentproto.StatusReport {
 	healthy := snapshot.LastError == "" && !snapshot.LastSuccess.IsZero()
+	// A fetched managed-team revision is not an applied revision. Do not
+	// acknowledge reassignment until all Xray targets finish reconciliation.
+	if agent.ResourceClass == "team" && snapshot.LastSuccess.Before(snapshot.LastFetch) {
+		healthy = false
+	}
 
 	running := false
 	var lastSyncPtr *time.Time
