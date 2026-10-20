@@ -1,6 +1,22 @@
 #!/bin/bash
 set -e
 
+# A copy-pasted installer must converge to the repository's current main
+# script before it changes a node. The guard prevents the refreshed copy from
+# downloading and executing itself again.
+if [ "${XCONNECT_SETUP_PROXY_BOOTSTRAPPED:-0}" != 1 ]; then
+    self_update_url="${XCONNECT_SETUP_PROXY_URL:-https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh}"
+    self_update_file="$(mktemp /tmp/xconnect-setup-proxy.XXXXXX.sh)"
+    trap 'rm -f "$self_update_file"' EXIT
+    if ! curl -fsSL --retry 3 --connect-timeout 10 "$self_update_url" -o "$self_update_file"; then
+        echo "Failed to download the current setup-proxy.sh from $self_update_url" >&2
+        exit 1
+    fi
+    chmod 0700 "$self_update_file"
+    export XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1
+    exec bash "$self_update_file" "$@"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1167,13 +1183,14 @@ fi
 
 # Fail before changing the node when the requested combined deployment is incomplete.
 if is_truthy "$INSTALL_OBSERVABILITY"; then
-    if [ "$STANDALONE_MODE" = true ] || [ "$UPGRADE_ONLY" = true ]; then
-        echo "--with-observability requires a normal managed-node installation." >&2
+    if [ "$STANDALONE_MODE" = true ]; then
+        echo "--with-observability requires a managed-node installation." >&2
         exit 1
     fi
     if [ -z "$AUTH_URL" ] || [ -z "$INTERNAL_SERVICE_TOKEN" ] ||
-       [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ]; then
-        echo "Combined deployment requires AUTH_URL, INTERNAL_SERVICE_TOKEN, VECTOR_AUTH_USER and VECTOR_AUTH_PASSWORD from Vault." >&2
+       [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ] ||
+       [ -z "$BILLING_URL" ]; then
+        echo "Combined deployment requires AUTH_URL, INTERNAL_SERVICE_TOKEN, BILLING_URL, VECTOR_AUTH_USER and VECTOR_AUTH_PASSWORD from Vault." >&2
         exit 1
     fi
 fi
@@ -1369,27 +1386,7 @@ fi
 if [ "$UPGRADE_ONLY" = true ]; then
     post_install_network_optimization
     apply_log_retention_policy
-
-    echo -e "${GREEN}[upgrade-only] Restarting services to apply new binaries...${NC}"
-    systemctl restart xray || true
-    systemctl restart xray-tcp || true
-    systemctl restart caddy || true
-    if [ "$STANDALONE_MODE" != true ]; then
-        systemctl restart xconnect-edge-agent || true
-    fi
-
-    echo -e "${GREEN}Upgrade Complete!${NC}"
-    echo -e "Service states:"
-    echo -e "  - xray: $(systemctl is-active xray || echo unknown)"
-    echo -e "  - xray-tcp: $(systemctl is-active xray-tcp || echo unknown)"
-    echo -e "  - caddy: $(systemctl is-active caddy || echo unknown)"
-    if [ "$STANDALONE_MODE" != true ]; then
-        echo -e "  - xconnect-edge-agent: $(systemctl is-active xconnect-edge-agent || echo unknown)"
-    fi
-    if [ "$STANDALONE_MODE" = true ]; then
-        print_standalone_links
-    fi
-    exit 0
+    echo -e "${YELLOW}[upgrade-only] Continuing with Caddy, templates and observability convergence.${NC}"
 fi
 
 # Always update templates
@@ -1714,12 +1711,15 @@ post_install_network_optimization
 
 if is_truthy "$INSTALL_OBSERVABILITY"; then
     export AUTH_URL INTERNAL_SERVICE_TOKEN
-    if [ -n "$BILLING_URL" ]; then
-        export VECTOR_BILLING_INGEST_ENABLED="${VECTOR_BILLING_INGEST_ENABLED:-true}"
-        export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_URL%/}/v1/ingest/snapshots}"
-        export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
-    fi
+    export VECTOR_BILLING_INGEST_ENABLED=true
+    export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_URL%/}/v1/ingest/snapshots}"
+    export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
     AGENT_PROXY_DOMAIN="$DOMAIN" bash "${REPO_SOURCE_DIR}/scripts/setup-observability.sh"
+    systemctl is-active --quiet vector || {
+        echo "Vector is not active after observability setup; billing collection is unavailable." >&2
+        exit 1
+    }
+    echo -e "${GREEN}Billing collection chain enabled: Xray Exporter -> Vector -> ${BILLING_URL%/}.${NC}"
 fi
 
 echo -e "${GREEN}Installation Complete!${NC}"
