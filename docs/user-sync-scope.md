@@ -43,3 +43,11 @@ export AGENT_POOL="jp-main"          # 任意逻辑池名，不决定用户范�
 普通安装会把显式设置的类型写入已有 `/etc/agent/account-agent.yaml`。只在当前 Shell 中 export 再执行 `systemctl restart` 不会让 systemd 服务继承该变量；应通过安装脚本落盘或配置服务环境。`--upgrade-only` 保留原有配置。Team 切回公共类型时同时清空团队 ID。
 
 启动日志展示实际 resourceClass、teamId 和 pool。若控制面响应范围不匹配，错误会显示 expected/received 类型，但不会打印 token；仍拒绝应用该快照，不通过忽略 scope 修复。控制面未更新或缺少公共节点管理权限时，Agent 单独升级无法补全 Shared 用户集合。
+
+## Team 节点登记与管理员分配
+
+`AGENT_RESOURCE_CLASS=team` 支持不填写 `AGENT_TEAM_ID`。该字段填写时仅作为建议归属；使用共享部署凭据的 Team 节点先进入管理端待分配清单，管理员分配团队并批准后才能获取该团队用户。
+
+`enrollmentStatus=pending/rejected/revoked` 的用户快照必须为空，Agent 仍应用空快照以撤销旧用户；`approved` 的 `scope.teamId` 是控制端最终分配结果，优先于节点建议值。缺失审批字段时保留原有独立凭据的严格范围校验。
+
+重新分配先撤销并等待空用户配置应用确认。传输路径保持 `/split`，不受类型或团队影响。升级顺序：数据库迁移 → Edge Agent → Accounts → Console，先 SIT/UAT 验证。

@@ -70,6 +70,6 @@ export AGENT_RESOURCE_CLASS="shared"
 unset AGENT_TEAM_ID
 ```
 
-Plus 节点将域名和池名分别设为 `jp-plus-xconnect-selfhost-prod-v2-01.svc.plus` 与 `jp-plus`，类型设为 `plus`。Team 节点对应 `jp-team-xconnect-selfhost-prod-v2-01.svc.plus`、`jp-team` 和 `team`，并必须设置实际的 `AGENT_TEAM_ID`。
+Plus 节点将域名和池名分别设为 `jp-plus-xconnect-selfhost-prod-v2-01.svc.plus` 与 `jp-plus`，类型设为 `plus`。Team 节点对应 `jp-team-xconnect-selfhost-prod-v2-01.svc.plus`、`jp-team` 和 `team`，可选填写建议归属 `AGENT_TEAM_ID`，最终由管理员分配并批准。
 
-Team 同步范围由 `AGENT_TEAM_ID` 限定，必须与控制面登记的团队授权一致。节点编号使用 `-01`、`-02`、`-03`，在同一区域、类型和环境内递增。
+Team 节点的 `AGENT_TEAM_ID` 仅为建议归属；共享部署凭据下先登记待分配，管理员分配并批准后，以控制端返回的团队范围同步。原有独立团队凭据继续执行严格范围校验。节点编号使用 `-01`、`-02`、`-03`，在同一区域、类型和环境内递增。

@@ -27,6 +27,7 @@ class InstallerTests(unittest.TestCase):
         with tarfile.open(self.archive, 'w:gz') as archive:
             archive.add(source, arcname='playbooks-test')
         self.env = dict(os.environ, PATH=f'{self.bin}:/usr/bin:/bin',
+                        XCONNECT_SETUP_PROXY_BOOTSTRAPPED='1',
                         AGENT_PROXY_DOMAIN='edge.example.test',
                         AUTH_URL='https://accounts.example.test',
                         INTERNAL_SERVICE_TOKEN='test-only-agent-secret',

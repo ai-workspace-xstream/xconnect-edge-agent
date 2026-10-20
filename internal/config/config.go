@@ -73,8 +73,8 @@ func (a Agent) ValidateUserScope() error {
 			return fmt.Errorf("agent.teamId requires resourceClass team")
 		}
 	case "team":
-		if a.TeamID == "" || len(a.TeamID) > 128 || strings.ContainsAny(a.TeamID, " \t\r\n") {
-			return fmt.Errorf("agent.teamId is required for resourceClass team and must contain no whitespace")
+		if len(a.TeamID) > 128 || strings.ContainsAny(a.TeamID, " \t\r\n") {
+			return fmt.Errorf("agent.teamId is an optional suggested team ID and must contain no whitespace")
 		}
 	default:
 		return fmt.Errorf("agent.resourceClass must be shared, free, plus, pro, or team")

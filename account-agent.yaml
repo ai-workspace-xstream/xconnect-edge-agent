@@ -4,7 +4,7 @@ log:
   level: info
 
 agent:
-  # Set per node: shared, free, plus, pro, or team (requires teamId).
+  # Set per node: shared, free, plus, pro, or team (optional suggested teamId).
   # For the shared node, entryPoint may equal id/domain (for example jp-xconnect.svc.plus).
   region: ""
   pool: ""

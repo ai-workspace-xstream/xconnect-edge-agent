@@ -11,7 +11,7 @@ func TestUserScopeValidation(t *testing.T) {
 		valid       bool
 	}{
 		{"", "", true}, {"shared", "", true}, {"free", "", true}, {"plus", "", true}, {"pro", "", true},
-		{"team", "team-a", true}, {"team", "", false}, {"plus", "team-a", false},
+		{"team", "team-a", true}, {"team", "", true}, {"plus", "team-a", false},
 		{"", "team-a", false}, {"premium", "", false}, {"team", "a\nb", false},
 	} {
 		err := (Agent{ResourceClass: tc.class, TeamID: tc.team}).ValidateUserScope()

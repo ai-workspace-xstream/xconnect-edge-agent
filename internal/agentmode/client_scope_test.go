@@ -3,10 +3,12 @@ package agentmode
 import (
 	"context"
 	"fmt"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestScopedSnapshotAdmission(t *testing.T) {
@@ -57,5 +59,59 @@ func TestScopedSnapshotAdmission(t *testing.T) {
 				t.Fatal("valid empty scoped snapshot must clear removed users")
 			}
 		})
+	}
+}
+
+func TestManagedTeamSnapshotAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		valid      bool
+	}{
+		{"pending clears users", `{"enrollmentStatus":"pending","scope":{"resourceClass":"team"},"clients":[],"total":0}`, true},
+		{"administrator overrides suggestion", `{"enrollmentStatus":"approved","scope":{"resourceClass":"team","teamId":"assigned"},"clients":[],"total":0}`, true},
+		{"revoked clears users", `{"enrollmentStatus":"revoked","scope":{"resourceClass":"team"},"clients":[],"total":0}`, true},
+		{"pending cannot deliver users", `{"enrollmentStatus":"pending","scope":{"resourceClass":"team"},"clients":[{"id":"test"}],"total":1}`, false},
+		{"approved requires team", `{"enrollmentStatus":"approved","scope":{"resourceClass":"team"},"clients":[],"total":0}`, false},
+		{"unknown enrollment state", `{"enrollmentStatus":"unexpected","scope":{"resourceClass":"team"},"clients":[],"total":0}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, tc.body) }))
+			defer server.Close()
+			client, err := NewClient(server.URL, "test-token", ClientOptions{ResourceClass: "team", TeamID: "suggested"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.ListClients(context.Background())
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+}
+
+func TestTeamStatusDoesNotAcknowledgeUnappliedFetch(t *testing.T) {
+	now := time.Now().UTC()
+	report := buildStatusReport(config.Agent{ID: "team-node", ResourceClass: "team"}, trackerSnapshot{Clients: 0, Revision: "pending-clear", LastSuccess: now.Add(-time.Minute), LastFetch: now}, time.Minute)
+	if report.Healthy {
+		t.Fatal("fetched revision must not acknowledge an applied empty configuration")
+	}
+}
+
+func TestManagedTeamEventPollingClosesWithoutWarningError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Agent-Event-Mode", "poll")
+		fmt.Fprint(w, "event: users-changed\ndata: pending-revision\n\n")
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, "test-token", ClientOptions{ResourceClass: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := ""
+	if err := client.WatchUserConfigEvents(context.Background(), func(rev string) { seen = rev }); err != nil {
+		t.Fatal(err)
+	}
+	if seen != "pending-revision" {
+		t.Fatal("missing enrollment event")
 	}
 }
