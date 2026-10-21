@@ -279,12 +279,10 @@ func (s *PeriodicSyncer) Start(ctx context.Context) (func(context.Context) error
 func (s *PeriodicSyncer) run(ctx context.Context) {
 	if n, err := s.sync(ctx); err != nil {
 		s.notify(SyncResult{Clients: n, Error: err, CompletedAt: time.Now().UTC()})
-		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-			s.logger.Error("xray config sync failed", "err", err)
-		}
 		if ctx.Err() != nil {
 			return
 		}
+		s.logger.Error("xray config sync failed", "err", err)
 	} else {
 		s.logger.Info("xray config synchronized", "clients", n)
 		s.notify(SyncResult{Clients: n, CompletedAt: time.Now().UTC()})
@@ -305,7 +303,9 @@ func (s *PeriodicSyncer) run(ctx context.Context) {
 			n, err := s.sync(ctx)
 			if err != nil {
 				s.notify(SyncResult{Clients: n, Error: err, CompletedAt: time.Now().UTC()})
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				// A controller request or command may have its own deadline.
+				// Only shutdown of this loop's context should stop reconciliation.
+				if ctx.Err() != nil {
 					return
 				}
 				s.logger.Error("xray config sync failed", "err", err)
