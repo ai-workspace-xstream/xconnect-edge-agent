@@ -276,6 +276,7 @@ write_caddy_config() {
         fi
         cat > /etc/caddy/Caddyfile <<EOF
 {
+    metrics
     log default {
         exclude http.handlers.reverse_proxy
     }
@@ -292,6 +293,7 @@ EOF
 
     cat > /etc/caddy/Caddyfile <<EOF
 {
+    metrics
     log default {
         exclude http.handlers.reverse_proxy
     }

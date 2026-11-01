@@ -76,6 +76,8 @@ billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower
     'vector_observability_environment': os.environ.get('DEPLOY_ENV', 'production'),
     'vector_tls_verify': True,
     'vector_local_observability_enabled': False,
+    'vector_caddy_metrics_enabled': True,
+    'vector_caddy_metrics_endpoint': 'http://127.0.0.1:2019/metrics',
     'vector_system_journald_enabled': True,
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
