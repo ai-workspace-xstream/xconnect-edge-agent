@@ -187,8 +187,16 @@ func LoadReader(r io.Reader) (*Config, error) {
 		cfg.Agent.TeamID = value
 	}
 	if value, ok := os.LookupEnv("AGENT_CUSTOM_EMAILS"); ok {
-		if err := json.Unmarshal([]byte(value), &cfg.Agent.AllowedEmails); err != nil || len(cfg.Agent.AllowedEmails) == 0 {
-			return nil, fmt.Errorf("AGENT_CUSTOM_EMAILS must be a non-empty JSON array of emails")
+		value = strings.TrimSpace(value)
+		if strings.HasPrefix(value, "[") {
+			if err := json.Unmarshal([]byte(value), &cfg.Agent.AllowedEmails); err != nil {
+				return nil, fmt.Errorf("AGENT_CUSTOM_EMAILS must be an email or a JSON array of emails")
+			}
+		} else {
+			cfg.Agent.AllowedEmails = []string{value}
+		}
+		if len(cfg.Agent.AllowedEmails) == 0 {
+			return nil, fmt.Errorf("AGENT_CUSTOM_EMAILS must not be empty")
 		}
 	}
 	if cfg.Agent.ResourceClass != "custom" && len(cfg.Agent.AllowedEmails) > 0 {
