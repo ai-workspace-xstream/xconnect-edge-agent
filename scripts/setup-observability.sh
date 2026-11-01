@@ -64,12 +64,19 @@ def api_address(filename, fallback):
     return fallback
 
 billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
+vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
     'agent_proxy': {'hosts': {node: {'ansible_connection': 'local',
                                   'ansible_python_interpreter': '/usr/bin/python3'}}}
 }}}))
 (root / 'vars.json').write_text(json.dumps({
     'observability_agent_hosts': 'agent_proxy',
+    'agent_proxy_vault_cert_auth_enabled': vault_cert_auth_enabled,
+    'agent_proxy_vector_vault_auth_cert_mount': os.environ.get('AGENT_PROXY_VAULT_CERT_MOUNT', 'auth/agent-proxy-cert'),
+    'agent_proxy_vector_vault_auth_cert_role': os.environ.get('AGENT_PROXY_VAULT_CERT_ROLE', ''),
+    'agent_proxy_vector_vault_auth_cert_policy': os.environ.get('AGENT_PROXY_VAULT_CERT_POLICY', ''),
+    'agent_proxy_vector_vault_auth_cert_field_prefix': os.environ.get('AGENT_PROXY_VAULT_CERT_FIELD_PREFIX', ''),
+    'agent_proxy_vector_vault_auth_cert_kv_path': os.environ.get('AGENT_PROXY_CERT_VAULT_PATH', ''),
     'xray_exporter_hosts': 'agent_proxy',
     'vector_observability_endpoint': os.environ['OBSERVABILITY_ENDPOINT'].rstrip('/'),
     'vector_observability_service_domain': node,
