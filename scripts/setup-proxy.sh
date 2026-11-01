@@ -109,7 +109,7 @@ validate_agent_scope() {
     local value_name value
 
     case "$RESOURCE_CLASS" in
-        ""|shared|free|plus|pro)
+        ""|shared|free|plus|pro|custom)
             if [ -n "$TEAM_ID" ]; then
                 echo "A team ID is only valid with --resource-class team." >&2
                 return 1
@@ -120,7 +120,7 @@ validate_agent_scope() {
             :
             ;;
         *)
-            echo "--resource-class must be shared, free, plus, pro, or team." >&2
+            echo "--resource-class must be shared, free, plus, pro, custom, or team." >&2
             return 1
             ;;
     esac

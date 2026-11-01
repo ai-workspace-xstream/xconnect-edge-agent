@@ -51,3 +51,16 @@ export AGENT_POOL="jp-main"          # 任意逻辑池名，不决定用户范�
 `enrollmentStatus=pending/rejected/revoked` 的用户快照必须为空，Agent 仍应用空快照以撤销旧用户；`approved` 的 `scope.teamId` 是控制端最终分配结果，优先于节点建议值。缺失审批字段时保留原有独立凭据的严格范围校验。
 
 重新分配先撤销并等待空用户配置应用确认。传输路径保持 `/split`，不受类型或团队影响。升级顺序：数据库迁移 → Edge Agent → Accounts → Console，先 SIT/UAT 验证。
+
+## 用户专属节点
+
+在 `xconnect-edge-agent.service` 的 `[Service]` 中可设置：
+
+```ini
+Environment='AGENT_RESOURCE_CLASS=custom'
+Environment='AGENT_CUSTOM_EMAILS=["alice@example.com","bob@example.com"]'
+```
+
+`custom` 为用户专属类型，`AGENT_CUSTOM_EMAILS` 是必填的非空 JSON 邮箱数组，也可配置 YAML `agent.allowedEmails`。未配置时保持现有公共节点行为；显式环境变量为空数组或包含无效邮箱时启动失败。邮箱匹配忽略大小写及首尾空格。名单仅进一步收紧该节点的用户集合，不授予订阅或流量权益：有效期、Plus/Pro 等级、黑名单及不限流量福利仍由 Accounts 现有规则决定。名单随认证请求和节点状态上报到 Accounts，Accounts 和节点同步均过滤实际 Xray 客户端；邮箱不会返回给普通用户。
+
+先更新 Accounts 再更新 Agent 和 Portal。使用独立的节点入口，避免与公共节点共享同一入口；启用或修改名单后，检查最新心跳与 Xray 成功同步，再验证名单内外账号的节点列表及连接。旧状态和旧 Xray 配置在完成新心跳及同步前可能仍然存在，因此不能将配置变更本身当作隔离完成。移除变量并成功同步可恢复原有行为。
