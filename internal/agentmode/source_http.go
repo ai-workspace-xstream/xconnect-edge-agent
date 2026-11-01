@@ -2,6 +2,7 @@ package agentmode
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -10,8 +11,9 @@ import (
 
 // HTTPClientSource retrieves Xray clients from the controller over HTTP.
 type HTTPClientSource struct {
-	client  *Client
-	tracker *syncTracker
+	allowedEmails []string
+	client        *Client
+	tracker       *syncTracker
 
 	mu     sync.Mutex
 	tuning *xrayconfig.ServerTuning
@@ -29,6 +31,19 @@ func (s *HTTPClientSource) FetchSnapshot(ctx context.Context) (xrayconfig.Snapsh
 	resp, err := s.client.ListClients(ctx)
 	if err != nil {
 		return xrayconfig.Snapshot{}, err
+	}
+	if len(s.allowedEmails) > 0 {
+		allowed := make(map[string]bool, len(s.allowedEmails))
+		for _, email := range s.allowedEmails {
+			allowed[strings.ToLower(strings.TrimSpace(email))] = true
+		}
+		clients := make([]xrayconfig.Client, 0, len(resp.Clients))
+		for _, client := range resp.Clients {
+			if allowed[strings.ToLower(strings.TrimSpace(client.Email))] {
+				clients = append(clients, client)
+			}
+		}
+		resp.Clients = clients
 	}
 	if s.tracker != nil {
 		s.tracker.UpdateFetch(len(resp.Clients), resp.Revision, time.Now().UTC())

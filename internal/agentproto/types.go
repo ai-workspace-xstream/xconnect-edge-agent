@@ -41,6 +41,7 @@ type StatusReport struct {
 
 // XrayStatus describes the synchronisation state of the managed Xray process.
 type XrayStatus struct {
+	AllowedEmails []string   `json:"allowedEmails,omitempty"`
 	ResourceClass string     `json:"resourceClass,omitempty"`
 	TeamID        string     `json:"teamId,omitempty"`
 	Running       bool       `json:"running"`

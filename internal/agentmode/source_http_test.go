@@ -71,3 +71,20 @@ func TestHTTPClientSourceSnapshotComesFromOneResponse(t *testing.T) {
 		t.Fatalf("snapshot mixes responses: %+v", snapshot)
 	}
 }
+
+func TestHTTPClientSourceRestrictsClientsByEmail(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"clients":[{"id":"a","email":"Alice@example.com"},{"id":"b","email":"bob@example.com"}],"total":2,"revision":"r1"}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, "agent-token", ClientOptions{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := NewHTTPClientSource(client, nil)
+	source.allowedEmails = []string{" alice@EXAMPLE.com "}
+	snapshot, err := source.FetchSnapshot(context.Background())
+	if err != nil || len(snapshot.Clients) != 1 || snapshot.Clients[0].ID != "a" {
+		t.Fatalf("snapshot=%+v err=%v", snapshot, err)
+	}
+}

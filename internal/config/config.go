@@ -1,8 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"net/mail"
 	"os"
 	"strings"
 	"time"
@@ -26,6 +28,7 @@ type Log struct {
 
 type Agent struct {
 	// ResourceClass selects the user sync scope: shared, free, plus, pro, or team.
+	AllowedEmails     []string      `yaml:"allowedEmails"`
 	ResourceClass     string        `yaml:"resourceClass"`
 	TeamID            string        `yaml:"teamId"`
 	OverlayStatusPath string        `yaml:"overlayStatusPath"`
@@ -67,8 +70,14 @@ func (a Agent) EffectiveRole() string {
 // ValidateUserScope validates the explicit resource class independently of Pool.
 // Empty scope retains compatibility with existing controller deployments.
 func (a Agent) ValidateUserScope() error {
+	for _, email := range a.AllowedEmails {
+		parsed, err := mail.ParseAddress(strings.TrimSpace(email))
+		if err != nil || parsed.Address != strings.TrimSpace(email) {
+			return fmt.Errorf("agent.allowedEmails contains an invalid email")
+		}
+	}
 	switch a.ResourceClass {
-	case "", "shared", "free", "plus", "pro":
+	case "", "shared", "free", "plus", "pro", "custom":
 		if a.TeamID != "" {
 			return fmt.Errorf("agent.teamId requires resourceClass team")
 		}
@@ -77,7 +86,7 @@ func (a Agent) ValidateUserScope() error {
 			return fmt.Errorf("agent.teamId is an optional suggested team ID and must contain no whitespace")
 		}
 	default:
-		return fmt.Errorf("agent.resourceClass must be shared, free, plus, pro, or team")
+		return fmt.Errorf("agent.resourceClass must be shared, free, plus, pro, custom, or team")
 	}
 	return nil
 }
@@ -176,6 +185,17 @@ func LoadReader(r io.Reader) (*Config, error) {
 	}
 	if value, ok := os.LookupEnv("AGENT_TEAM_ID"); ok {
 		cfg.Agent.TeamID = value
+	}
+	if value, ok := os.LookupEnv("AGENT_CUSTOM_EMAILS"); ok {
+		if err := json.Unmarshal([]byte(value), &cfg.Agent.AllowedEmails); err != nil || len(cfg.Agent.AllowedEmails) == 0 {
+			return nil, fmt.Errorf("AGENT_CUSTOM_EMAILS must be a non-empty JSON array of emails")
+		}
+	}
+	if cfg.Agent.ResourceClass != "custom" && len(cfg.Agent.AllowedEmails) > 0 {
+		return nil, fmt.Errorf("allowedEmails requires resourceClass custom")
+	}
+	if cfg.Agent.ResourceClass == "custom" && len(cfg.Agent.AllowedEmails) == 0 {
+		return nil, fmt.Errorf("custom agent requires a non-empty allowedEmails list")
 	}
 	if err := cfg.Agent.ValidateUserScope(); err != nil {
 		return nil, err

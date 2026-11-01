@@ -21,6 +21,7 @@ import (
 // ClientOptions configures the HTTP client used to communicate with the
 // controller.
 type ClientOptions struct {
+	AllowedEmails      []string
 	ResourceClass      string
 	TeamID             string
 	Timeout            time.Duration
@@ -31,12 +32,13 @@ type ClientOptions struct {
 
 // Client issues authenticated requests against the controller.
 type Client struct {
-	scope     agentproto.UserScope
-	baseURL   *url.URL
-	token     string
-	http      *http.Client
-	userAgent string
-	agentID   string
+	allowedEmails []string
+	scope         agentproto.UserScope
+	baseURL       *url.URL
+	token         string
+	http          *http.Client
+	userAgent     string
+	agentID       string
 }
 
 // NewClient constructs a client for the provided controller URL and token.
@@ -85,12 +87,13 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:   parsed,
-		scope:     agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID},
-		token:     token,
-		http:      client,
-		userAgent: userAgent,
-		agentID:   strings.TrimSpace(opts.AgentID),
+		baseURL:       parsed,
+		allowedEmails: opts.AllowedEmails,
+		scope:         agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID},
+		token:         token,
+		http:          client,
+		userAgent:     userAgent,
+		agentID:       strings.TrimSpace(opts.AgentID),
 	}, nil
 }
 
@@ -276,6 +279,10 @@ func (c *Client) applyHeaders(req *http.Request) {
 	}
 	if c.scope.TeamID != "" {
 		req.Header.Set("X-Agent-Team-ID", c.scope.TeamID)
+	}
+	if c.scope.ResourceClass == "custom" && len(c.allowedEmails) > 0 {
+		encoded, _ := json.Marshal(c.allowedEmails)
+		req.Header.Set("X-Agent-Allowed-Emails", string(encoded))
 	}
 	req.Header.Set("User-Agent", c.userAgent)
 }

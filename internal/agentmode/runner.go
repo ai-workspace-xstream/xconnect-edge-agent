@@ -43,6 +43,12 @@ func Run(ctx context.Context, opts Options) error {
 	if token == "" {
 		return errors.New("agent.apiToken is required")
 	}
+	if opts.Agent.ResourceClass != "custom" && len(opts.Agent.AllowedEmails) > 0 {
+		return errors.New("allowedEmails requires resourceClass custom")
+	}
+	if opts.Agent.ResourceClass == "custom" && len(opts.Agent.AllowedEmails) == 0 {
+		return errors.New("custom agent requires a non-empty allowedEmails list")
+	}
 	if err := opts.Agent.ValidateUserScope(); err != nil {
 		return err
 	}
@@ -98,6 +104,7 @@ func Run(ctx context.Context, opts Options) error {
 		InsecureSkipVerify: opts.Agent.TLS.InsecureSkipVerify,
 		UserAgent:          buildUserAgent(opts.Agent.ID),
 		AgentID:            opts.Agent.ID,
+		AllowedEmails:      opts.Agent.AllowedEmails,
 		ResourceClass:      opts.Agent.ResourceClass,
 		TeamID:             opts.Agent.TeamID,
 	})
@@ -118,6 +125,7 @@ func Run(ctx context.Context, opts Options) error {
 		tracker.MarkSuccess(time.Now().UTC())
 	} else {
 		source := NewHTTPClientSource(client, tracker)
+		source.allowedEmails = opts.Agent.AllowedEmails
 		userConfigSyncInterval := userConfigSyncInterval(syncInterval)
 
 		// If no targets are defined, fallback to the legacy single target.
@@ -376,6 +384,7 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 		Users:        snapshot.Clients,
 		SyncRevision: snapshot.Revision,
 		Xray: agentproto.XrayStatus{
+			AllowedEmails: agent.AllowedEmails,
 			ResourceClass: agent.ResourceClass,
 			TeamID:        agent.TeamID,
 			Running:       running,
