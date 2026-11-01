@@ -1322,6 +1322,19 @@ for key, variable in [('id', 'AGENT_PROXY_DOMAIN'), ('controllerUrl', 'AUTH_URL'
     if value:
         text = re.sub(r'^(\s*' + key + r':\s*).*$',
                       lambda match: match.group(1) + json.dumps(value), text, flags=re.M)
+# Persist the custom audience, since systemd does not inherit installer exports.
+raw = os.environ.get('AGENT_CUSTOM_EMAILS')
+if raw is not None:
+    raw = raw.strip()
+    emails = json.loads(raw) if raw.startswith('[') else [raw]
+    if not isinstance(emails, list) or not emails or not all(isinstance(v, str) and '@' in v and not any(c.isspace() for c in v.strip()) for v in emails):
+        raise SystemExit('AGENT_CUSTOM_EMAILS must contain valid emails')
+    emails = [v.strip().lower() for v in emails]
+    value = '  allowedEmails: ' + json.dumps(emails) + '\n'
+    text = re.sub(r'^  allowedEmails:.*\n(?:    .*\n)*', '', text, flags=re.M)
+    text = re.sub(r'^agent:[^\n]*\n', lambda m: m.group(0) + value, text, count=1, flags=re.M)
+elif os.environ.get('AGENT_RESOURCE_CLASS') not in (None, 'custom'):
+    text = re.sub(r'^  allowedEmails:.*\n(?:    .*\n)*', '', text, flags=re.M)
 path.write_text(text)
 PY_CONFIG
     configure_vector_billing /etc/agent/account-agent.yaml

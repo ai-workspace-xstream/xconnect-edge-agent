@@ -61,6 +61,6 @@ Environment='AGENT_RESOURCE_CLASS=custom'
 Environment='AGENT_CUSTOM_EMAILS=["alice@example.com","bob@example.com"]'
 ```
 
-`custom` 为用户专属类型，`AGENT_CUSTOM_EMAILS` 是必填的非空 JSON 邮箱数组，也可配置 YAML `agent.allowedEmails`。未配置时保持现有公共节点行为；显式环境变量为空数组或包含无效邮箱时启动失败。邮箱匹配忽略大小写及首尾空格。名单仅进一步收紧该节点的用户集合，不授予订阅或流量权益：有效期、Plus/Pro 等级、黑名单及不限流量福利仍由 Accounts 现有规则决定。名单随认证请求和节点状态上报到 Accounts，Accounts 和节点同步均过滤实际 Xray 客户端；邮箱不会返回给普通用户。
+`custom` 为用户专属类型，`AGENT_CUSTOM_EMAILS` 支持单个邮箱或非空 JSON 邮箱数组，且为必填项，也可配置 YAML `agent.allowedEmails`。未配置时保持现有公共节点行为；显式环境变量为空、空数组或包含无效邮箱时启动失败。邮箱匹配忽略大小写及首尾空格。名单仅进一步收紧该节点的用户集合，不授予订阅或流量权益：有效期、Plus/Pro 等级、黑名单及不限流量福利仍由 Accounts 现有规则决定。名单随认证请求和节点状态上报到 Accounts，Accounts 和节点同步均过滤实际 Xray 客户端；邮箱不会返回给普通用户。
 
 先更新 Accounts 再更新 Agent 和 Portal。使用独立的节点入口，避免与公共节点共享同一入口；启用或修改名单后，检查最新心跳与 Xray 成功同步，再验证名单内外账号的节点列表及连接。旧状态和旧 Xray 配置在完成新心跳及同步前可能仍然存在，因此不能将配置变更本身当作隔离完成。移除变量并成功同步可恢复原有行为。
