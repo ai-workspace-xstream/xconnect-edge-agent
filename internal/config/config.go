@@ -27,6 +27,7 @@ type Log struct {
 }
 
 type Agent struct {
+	CustomAllowFree bool `yaml:"customAllowFree"`
 	// ResourceClass selects the user sync scope: shared, free, plus, pro, or team.
 	AllowedEmails     []string      `yaml:"allowedEmails"`
 	ResourceClass     string        `yaml:"resourceClass"`
@@ -70,6 +71,9 @@ func (a Agent) EffectiveRole() string {
 // ValidateUserScope validates the explicit resource class independently of Pool.
 // Empty scope retains compatibility with existing controller deployments.
 func (a Agent) ValidateUserScope() error {
+	if a.CustomAllowFree && a.ResourceClass != "custom" {
+		return fmt.Errorf("agent.customAllowFree requires resourceClass custom")
+	}
 	for _, email := range a.AllowedEmails {
 		parsed, err := mail.ParseAddress(strings.TrimSpace(email))
 		if err != nil || parsed.Address != strings.TrimSpace(email) {

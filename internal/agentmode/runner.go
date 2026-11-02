@@ -105,6 +105,7 @@ func Run(ctx context.Context, opts Options) error {
 		UserAgent:          buildUserAgent(opts.Agent.ID),
 		AgentID:            opts.Agent.ID,
 		AllowedEmails:      opts.Agent.AllowedEmails,
+		CustomAllowFree:    opts.Agent.CustomAllowFree,
 		ResourceClass:      opts.Agent.ResourceClass,
 		TeamID:             opts.Agent.TeamID,
 	})
@@ -384,11 +385,12 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 		Users:        snapshot.Clients,
 		SyncRevision: snapshot.Revision,
 		Xray: agentproto.XrayStatus{
-			AllowedEmails: agent.AllowedEmails,
-			ResourceClass: agent.ResourceClass,
-			TeamID:        agent.TeamID,
-			Running:       running,
-			Clients:       snapshot.Clients,
+			AllowedEmails:   agent.AllowedEmails,
+			CustomAllowFree: agent.CustomAllowFree,
+			ResourceClass:   agent.ResourceClass,
+			TeamID:          agent.TeamID,
+			Running:         running,
+			Clients:         snapshot.Clients,
 			LastSync: func() *time.Time {
 				if lastSyncPtr == nil {
 					return nil
