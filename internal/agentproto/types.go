@@ -8,6 +8,8 @@ import (
 
 // UserScope is the controller-authorized audience, not a client-supplied claim.
 type UserScope struct {
+	EmailPolicy     string `json:"emailPolicy,omitempty"`
+	EmailDigest     string `json:"emailDigest,omitempty"`
 	CustomAllowFree bool   `json:"customAllowFree,omitempty"`
 	ResourceClass   string `json:"resourceClass"`
 	TeamID          string `json:"teamId,omitempty"`

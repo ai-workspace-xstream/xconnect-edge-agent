@@ -11,6 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
@@ -71,6 +72,12 @@ func (a Agent) EffectiveRole() string {
 // ValidateUserScope validates the explicit resource class independently of Pool.
 // Empty scope retains compatibility with existing controller deployments.
 func (a Agent) ValidateUserScope() error {
+	if len(a.AllowedEmails) > 0 && !agentproto.PublicResourceClass(a.ResourceClass) && a.ResourceClass != "custom" {
+		return fmt.Errorf("allowedEmails requires an explicit public class or custom")
+	}
+	if _, err := agentproto.NormalizeNodeEmails(a.AllowedEmails); err != nil {
+		return err
+	}
 	if a.CustomAllowFree && a.ResourceClass != "custom" {
 		return fmt.Errorf("agent.customAllowFree requires resourceClass custom")
 	}
@@ -203,9 +210,14 @@ func LoadReader(r io.Reader) (*Config, error) {
 			return nil, fmt.Errorf("AGENT_CUSTOM_EMAILS must not be empty")
 		}
 	}
-	if cfg.Agent.ResourceClass != "custom" && len(cfg.Agent.AllowedEmails) > 0 {
-		return nil, fmt.Errorf("allowedEmails requires resourceClass custom")
+	if cfg.Agent.ResourceClass == "team" && len(cfg.Agent.AllowedEmails) > 0 {
+		return nil, fmt.Errorf("team nodes do not support allowedEmails")
 	}
+	normalized, err := agentproto.NormalizeNodeEmails(cfg.Agent.AllowedEmails)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Agent.AllowedEmails = normalized
 	if cfg.Agent.ResourceClass == "custom" && len(cfg.Agent.AllowedEmails) == 0 {
 		return nil, fmt.Errorf("custom agent requires a non-empty allowedEmails list")
 	}

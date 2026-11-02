@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
@@ -32,7 +33,7 @@ func (s *HTTPClientSource) FetchSnapshot(ctx context.Context) (xrayconfig.Snapsh
 	if err != nil {
 		return xrayconfig.Snapshot{}, err
 	}
-	if len(s.allowedEmails) > 0 {
+	if len(s.allowedEmails) > 0 && !agentproto.PublicResourceClass(s.client.scope.ResourceClass) {
 		allowed := make(map[string]bool, len(s.allowedEmails))
 		for _, email := range s.allowedEmails {
 			allowed[strings.ToLower(strings.TrimSpace(email))] = true
