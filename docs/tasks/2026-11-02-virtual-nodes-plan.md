@@ -3,6 +3,7 @@
 > Status: IN PROGRESS — P0 audit and first guarded increment; multi-node runtime not implemented or deployed
 > Date: 2026-11-02
 > Task: https://github.com/ai-workspace-xstream/xconnect-edge-agent/issues/130
+> PRs: [Agent #131](https://github.com/ai-workspace-xstream/xconnect-edge-agent/pull/131), [Accounts #290](https://github.com/ai-workspace-services/accounts/pull/290)
 > Source audit and current boundaries: [P0 audit](2026-11-02-virtual-nodes-p0-audit.md)
 > 范围：保持现有功能，补充虚拟节点及按节点分类的流量、账单和统计能力。
 
@@ -29,7 +30,7 @@
 | `internal/agentmode/billing_client.go`、`billing_scheduler.go` | 提供 collect-and-rate / reconcile 作业触发，不是逐用户流量采集器 | 不能在每个节点上下文中重复启动全局计费作业 |
 | `deploy/ansible/roles/xconnect_edge_agent/templates/xray-exporter.env.j2` | 现有模板传入单个 XRAY_STATS_URL、EXPORTER_NODE_ID 与监听地址 | 需核实 exporter、Vector 和 Billing 的多实例配置能力及实际所有者 |
 
-本轮未检查 Accounts、Billing、Console 的最新源码与数据库，也未 SSH 检查线上。因此多节点是否需要服务端字段、索引或 SQL 调整仍为待确认项，不能承诺零 schema 变更。历史上链路服务运行并不等于计费数据端到端正确，实施时必须以新鲜明细和账本核验。
+上述为原规划阶段核验。实施任务已刷新并核验 Accounts、Billing 和 exporter，结论及最小 schema 评估见 [P0 核验](2026-11-02-virtual-nodes-p0-audit.md)。Console 和线上数据库尚未核验，未 SSH 检查生产。链路服务运行不等于计费正确，仍须用新鲜明细与账本验收。
 
 ## 3. 架构与身份
 
@@ -64,7 +65,7 @@ flowchart TB
 
 ## 4. 配置设计
 
-详细字段、加载与校验规则已拆分至 [虚拟节点配置格式设计（Draft v2）](../virtual-nodes-configuration-design.md)，完整 YAML/JSON 见 [配置示例](../examples/virtual-nodes/README.md)。所有新增字段均未实现，不能直接部署到当前版本。
+详细字段、加载与校验规则已拆分至 [虚拟节点配置格式设计（Draft v2）](../virtual-nodes-configuration-design.md)，完整 YAML/JSON 见 [配置示例](../examples/virtual-nodes/README.md)。当前仅主配置预检与运行能力门禁已实现，子文件和多节点运行仍未实现，不能部署多节点示例。
 
 ```yaml
 virtualNodes:
@@ -158,7 +159,7 @@ nodeId 必须沿 exporter、转发、落库、计费、查询全程保留，服�
 
 ## 9. 实施拆分与验收门槛
 
-以下为建议任务，全部尚未执行；实际 PR 按依赖保持最小范围。
+以下为交付阶段；P0 静态核验与首批防误部署、身份绑定改动见 P0 文档和关联 PR，其余按依赖推进。
 
 | 阶段 | 所有者/落点 | 交付与放行条件 |
 | --- | --- | --- |

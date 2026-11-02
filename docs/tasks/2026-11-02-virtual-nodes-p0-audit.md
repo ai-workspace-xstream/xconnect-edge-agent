@@ -2,6 +2,8 @@
 
 Task: https://github.com/ai-workspace-xstream/xconnect-edge-agent/issues/130
 
+Review increments: [Agent #131](https://github.com/ai-workspace-xstream/xconnect-edge-agent/pull/131), [Accounts #290](https://github.com/ai-workspace-services/accounts/pull/290).
+
 This is a source audit on 2026-11-02, not deployment or billing acceptance.
 
 ## Fixed source baselines
@@ -130,3 +132,19 @@ activation mechanism. Existing single-node targets and billing scheduling are
 untouched. Future support must replace the explicit gate only after owning
 contracts and their tests are implemented; do not silently change the capability
 or deploy the Draft v2 samples.
+
+## Local verification receipts
+
+- Agent `go test ./...`: PASS, including legacy runner/targets and customAllowFree.
+- Accounts `go test ./internal/agentserver ./api`: PASS. Final focused identity,
+  Agent and team-enrollment regressions also PASS after the takeover guard.
+- Exporter `go test ./internal/snapshot`: baseline PASS; no exporter implementation
+  changes were made.
+- Billing `go test ./internal/service ./internal/httpapi ./internal/repository`:
+  baseline PASS (repository package has no tests); this does not establish
+  PostgreSQL atomicity or prove the gaps above fixed.
+- CLI capability probe returns `virtualNodeRuntime: false`. Offline multi-node
+  sample fails with the explicit runtime-prerequisite error and no child reads.
+
+CI status belongs to each PR; local test success is not a build, merge, fixed
+artifact, UAT or production receipt.

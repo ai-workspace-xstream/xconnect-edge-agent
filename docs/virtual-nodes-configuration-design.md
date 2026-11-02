@@ -3,7 +3,7 @@
 > Status: DRAFT — only the guarded main-envelope preflight is implemented; virtual-node runtime and child/runtime contracts remain unimplemented.
 > Current evidence: [P0 audit](tasks/2026-11-02-virtual-nodes-p0-audit.md)
 > Date: 2026-11-02
-> Related PRs: 尚未创建
+> Related PRs: [Agent #131](https://github.com/ai-workspace-xstream/xconnect-edge-agent/pull/131), [Accounts #290](https://github.com/ai-workspace-services/accounts/pull/290)
 > 总体方案：[虚拟节点规划](tasks/2026-11-02-virtual-nodes-plan.md)
 > 完整示例：[示例目录与使用说明](examples/virtual-nodes/README.md)
 
