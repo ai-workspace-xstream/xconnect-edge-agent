@@ -1,0 +1,37 @@
+# DRAFT config v2：待实现，不可直接交给当前 Agent。
+# 单节点适合低配主机；关闭开关后不读取虚拟节点清单。
+configVersion: 2
+mode: agent
+log:
+  level: info
+virtualNodes:
+  enabled: false
+agent:
+  id: us-single
+  nodeId: us-single
+  role: agent-proxy
+  controllerUrl: https://accounts.example.com
+  apiToken: "" # 单节点沿用 INTERNAL_SERVICE_TOKEN 环境变量；禁止填入仓库。
+  domain: us-single.example.com
+  entryPoint: us-single.example.com
+  resourceClass: free
+  teamId: ""
+  allowedEmails: []
+  statsEnabled: true
+  httpTimeout: 15s
+  statusInterval: 1m
+  syncInterval: 5m
+  tls:
+    insecureSkipVerify: false
+xray:
+  sync:
+    enabled: true
+    interval: 5m
+    targets:
+      - name: xhttp
+        templatePath: /etc/agent/templates/xray.xhttp.template.json
+        outputPath: /usr/local/etc/xray/config.json
+        validateCommand: [] # 部署侧按现有安装方式提供；本例不创建服务。
+        restartCommand: [] # 沿用既有服务配置，勿以空命令替代真实重载验收。
+billing:
+  enabled: false # 仅关闭可选的全局计费作业触发；不代表关闭流量采集或免流。

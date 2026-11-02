@@ -23,6 +23,8 @@ var (
 
 func main() {
 	configPath := flag.String("config", "account-agent.yaml", "path to configuration file")
+	checkConfig := flag.Bool("check-config", false, "validate configuration without telemetry, controller requests or service changes")
+	capabilities := flag.Bool("capabilities", false, "print machine-readable configuration capabilities and exit")
 	showVersion := flag.Bool("v", false, "print version information and exit")
 	flag.Parse()
 
@@ -31,6 +33,23 @@ func main() {
 		return
 	}
 
+	if *capabilities {
+		fmt.Println(config.Capabilities())
+		return
+	}
+	if *checkConfig {
+		cfg, err := config.Load(*configPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if cfg.Mode != "agent" {
+			fmt.Fprintln(os.Stderr, "mode must be agent")
+			os.Exit(1)
+		}
+		fmt.Println("configuration syntax and scope valid; runtime dependencies not checked")
+		return
+	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	shutdownTelemetry, telemetryErr := telemetry.Init(context.Background(), gitCommit)
 	if telemetryErr != nil {
