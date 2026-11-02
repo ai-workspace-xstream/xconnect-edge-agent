@@ -21,6 +21,7 @@ import (
 // ClientOptions configures the HTTP client used to communicate with the
 // controller.
 type ClientOptions struct {
+	CustomAllowFree    bool
 	AllowedEmails      []string
 	ResourceClass      string
 	TeamID             string
@@ -32,18 +33,19 @@ type ClientOptions struct {
 
 // Client issues authenticated requests against the controller.
 type Client struct {
-	allowedEmails []string
-	scope         agentproto.UserScope
-	baseURL       *url.URL
-	token         string
-	http          *http.Client
-	userAgent     string
-	agentID       string
+	customAllowFree bool
+	allowedEmails   []string
+	scope           agentproto.UserScope
+	baseURL         *url.URL
+	token           string
+	http            *http.Client
+	userAgent       string
+	agentID         string
 }
 
 // NewClient constructs a client for the provided controller URL and token.
 func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
-	if err := (config.Agent{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID}).ValidateUserScope(); err != nil {
+	if err := (config.Agent{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree}).ValidateUserScope(); err != nil {
 		return nil, err
 	}
 	trimmedURL := strings.TrimSpace(baseURL)
@@ -87,13 +89,14 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 	}
 
 	return &Client{
-		baseURL:       parsed,
-		allowedEmails: opts.AllowedEmails,
-		scope:         agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID},
-		token:         token,
-		http:          client,
-		userAgent:     userAgent,
-		agentID:       strings.TrimSpace(opts.AgentID),
+		baseURL:         parsed,
+		allowedEmails:   opts.AllowedEmails,
+		customAllowFree: opts.CustomAllowFree,
+		scope:           agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree},
+		token:           token,
+		http:            client,
+		userAgent:       userAgent,
+		agentID:         strings.TrimSpace(opts.AgentID),
 	}, nil
 }
 
@@ -268,6 +271,9 @@ func (c *Client) ReportStatus(ctx context.Context, report agentproto.StatusRepor
 }
 
 func (c *Client) applyHeaders(req *http.Request) {
+	if c.customAllowFree {
+		req.Header.Set("X-Agent-Custom-Allow-Free", "true")
+	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("X-Service-Token", c.token)
 	if c.agentID != "" {

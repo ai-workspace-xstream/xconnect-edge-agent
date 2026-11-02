@@ -7,6 +7,9 @@ log:
   level: info
 
 agent:
+  # Custom-only optional Free access; false preserves existing eligibility.
+  # See docs/custom-node-free-access.md.
+  customAllowFree: false
   # Unique identifier for this agent node (e.g., "hk-xhttp.svc.plus", "us-tcp.svc.plus")
   id: "your-node-id.svc.plus"
   
