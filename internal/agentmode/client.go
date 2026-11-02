@@ -45,7 +45,7 @@ type Client struct {
 
 // NewClient constructs a client for the provided controller URL and token.
 func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
-	if err := (config.Agent{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree}).ValidateUserScope(); err != nil {
+	if err := (config.Agent{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree, AllowedEmails: opts.AllowedEmails}).ValidateUserScope(); err != nil {
 		return nil, err
 	}
 	trimmedURL := strings.TrimSpace(baseURL)
@@ -88,11 +88,20 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 		userAgent = "xcontrol-agent"
 	}
 
+	emails, err := agentproto.NormalizeNodeEmails(opts.AllowedEmails)
+	if err != nil {
+		return nil, err
+	}
+	scope := agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree}
+	if agentproto.PublicResourceClass(opts.ResourceClass) && len(emails) > 0 {
+		scope.EmailPolicy = agentproto.PublicEmailUnionPolicy
+		scope.EmailDigest = agentproto.NodeEmailDigest(emails)
+	}
 	return &Client{
 		baseURL:         parsed,
-		allowedEmails:   opts.AllowedEmails,
+		allowedEmails:   emails,
 		customAllowFree: opts.CustomAllowFree,
-		scope:           agentproto.UserScope{ResourceClass: opts.ResourceClass, TeamID: opts.TeamID, CustomAllowFree: opts.CustomAllowFree},
+		scope:           scope,
 		token:           token,
 		http:            client,
 		userAgent:       userAgent,
@@ -140,6 +149,9 @@ func (c *Client) ListClients(ctx context.Context) (agentproto.ClientListResponse
 		_ = resp.Body.Close()
 		if err != nil {
 			return agentproto.ClientListResponse{}, fmt.Errorf("decode client list: %w", err)
+		}
+		if c.scope.EmailPolicy != "" && (payload.Scope == nil || payload.Scope.EmailPolicy != c.scope.EmailPolicy || payload.Scope.EmailDigest != c.scope.EmailDigest) {
+			return agentproto.ClientListResponse{}, errors.New("controller public email union policy receipt missing or mismatched; upgrade Accounts or reconcile node email configuration; refusing Xray synchronization")
 		}
 		if payload.EnrollmentStatus != "" {
 			// Administrator assignment is authoritative for managed team nodes.
@@ -286,7 +298,10 @@ func (c *Client) applyHeaders(req *http.Request) {
 	if c.scope.TeamID != "" {
 		req.Header.Set("X-Agent-Team-ID", c.scope.TeamID)
 	}
-	if c.scope.ResourceClass == "custom" && len(c.allowedEmails) > 0 {
+	if c.scope.EmailPolicy != "" {
+		req.Header.Set("X-Agent-Email-Policy", c.scope.EmailPolicy)
+	}
+	if (c.scope.ResourceClass == "custom" || c.scope.EmailPolicy != "") && len(c.allowedEmails) > 0 {
 		encoded, _ := json.Marshal(c.allowedEmails)
 		req.Header.Set("X-Agent-Allowed-Emails", string(encoded))
 	}

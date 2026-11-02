@@ -43,8 +43,8 @@ func Run(ctx context.Context, opts Options) error {
 	if token == "" {
 		return errors.New("agent.apiToken is required")
 	}
-	if opts.Agent.ResourceClass != "custom" && len(opts.Agent.AllowedEmails) > 0 {
-		return errors.New("allowedEmails requires resourceClass custom")
+	if opts.Agent.ResourceClass == "team" && len(opts.Agent.AllowedEmails) > 0 {
+		return errors.New("team nodes do not support allowedEmails")
 	}
 	if opts.Agent.ResourceClass == "custom" && len(opts.Agent.AllowedEmails) == 0 {
 		return errors.New("custom agent requires a non-empty allowedEmails list")

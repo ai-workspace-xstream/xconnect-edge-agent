@@ -25,3 +25,5 @@ Accounts 在用户快照 scope 中返回 `customAllowFree`，Agent 校验回执�
 修改 `/etc/agent/account-agent.yaml` 后按现有部署方式受控重启 Agent；它会同步其 Xray 目标。检查两个传输后端的配置与服务健康，不能仅凭 Agent active 判断用户可连接。无需修改既有 init.sh；以后重新执行安装脚本可能重新渲染 YAML，运维应通过配置所有者保留此选项。
 
 回退时先置 false 并重启新版 Agent，确认 Free 用户从 Xray 和节点列表撤销，再按需回退二进制；回退 Accounts 前先关闭节点开关。不删除用户、配置用户套餐或修改 SQL schema。
+
+公开 free/plus/pro/shared 节点的邮箱补充授权采用并集，见 [公开节点邮箱授权](node-email-access.md)。本页 custom 限制名单与 customAllowFree 语义保持不变。

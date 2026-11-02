@@ -7,6 +7,10 @@ log:
   level: info
 
 agent:
+  # Optional public-pool union: original tier eligibility OR these emails.
+  # resourceClass: plus
+  # allowedEmails: ["alice@example.com", "bob@example.com"]
+  # See docs/node-email-access.md for permissions and upgrade order.
   # Custom-only optional Free access; false preserves existing eligibility.
   # See docs/custom-node-free-access.md.
   customAllowFree: false
