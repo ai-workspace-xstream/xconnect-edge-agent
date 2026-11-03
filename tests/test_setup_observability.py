@@ -127,6 +127,14 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertNotEqual(self.run_helper(FAIL_SERVICE='vector').returncode, 0)
         self.assertNotEqual(self.run_helper(INGEST_EXIT='9').returncode, 0)
 
+    def test_service_self_check_accepts_combined_or_legacy_host_metrics(self):
+        combined = self.run_helper(FAIL_SERVICE='node-exporter')
+        self.assertEqual(combined.returncode, 0, combined.stderr)
+        self.assertIn('PASS service xconnect-host-metrics', combined.stdout)
+        legacy = self.run_helper(FAIL_SERVICE='xconnect-host-metrics')
+        self.assertEqual(legacy.returncode, 0, legacy.stderr)
+        self.assertIn('PASS services node-exporter and process-exporter', legacy.stdout)
+
     def test_preflight_rejects_invalid_parameters(self):
         for values in ({'VECTOR_AUTH_PASSWORD': ''}, {'OBSERVABILITY_ENDPOINT': 'http://unsafe.test'},
                        {'OBSERVABILITY_PLAYBOOKS_REF': 'main'}):

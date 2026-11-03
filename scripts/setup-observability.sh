@@ -114,13 +114,21 @@ ANSIBLE_CONFIG="$work_dir/ansible.cfg" ansible-playbook \
     --inventory "$work_dir/inventory.json" --limit "$AGENT_PROXY_DOMAIN" \
     --extra-vars "@$work_dir/vars.json"
 
-for service in xconnect-edge-agent xray xray-tcp caddy node-exporter process-exporter blackbox vector xray-exporter-xhttp xray-exporter-tcp; do
+for service in xconnect-edge-agent xray xray-tcp caddy blackbox vector xray-exporter-xhttp xray-exporter-tcp; do
     systemctl is-active --quiet "$service" || {
         echo "Required service is not active: $service" >&2
         exit 1
     }
     printf "PASS service %s\n" "$service"
 done
+if systemctl is-active --quiet xconnect-host-metrics; then
+    printf "PASS service xconnect-host-metrics\n"
+elif systemctl is-active --quiet node-exporter && systemctl is-active --quiet process-exporter; then
+    printf "PASS services node-exporter and process-exporter\n"
+else
+    echo "Required host metrics service is not active (xconnect-host-metrics or both legacy exporters)." >&2
+    exit 1
+fi
 for port in 9100 9256; do
     curl -fsS --max-time 10 "http://127.0.0.1:$port/metrics" -o /dev/null
 done
