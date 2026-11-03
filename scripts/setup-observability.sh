@@ -64,6 +64,7 @@ def api_address(filename, fallback):
     return fallback
 
 billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
+xray_repair_enabled = os.environ.get('XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED', 'false').lower() in ('true', '1', 'yes')
 vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
     'xray_exporter': {'hosts': {node: {}}},
@@ -89,6 +90,10 @@ vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 
     'vector_system_journald_enabled': True,
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
+    'xray_exporter_repair_xray_services_enabled': xray_repair_enabled,
+    'xray_exporter_tcp_certificate_domain': node,
+    'xray_exporter_tcp_certificate_file': os.environ.get('XRAY_EXPORTER_TCP_CERTIFICATE_FILE', '/etc/caddy/tls/agent-proxy.crt'),
+    'xray_exporter_tcp_key_file': os.environ.get('XRAY_EXPORTER_TCP_KEY_FILE', '/etc/caddy/tls/agent-proxy.key'),
     # Snapshot-enabled exporters must hand off to the local Vector listener;
     # the observability playbook rejects an empty or remote target on agents.
     'xray_exporter_vector_snapshot_url': 'http://127.0.0.1:8686' if billing_enabled else '',
