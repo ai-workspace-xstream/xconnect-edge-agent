@@ -27,10 +27,17 @@ if [[ -z "${VAULT_TOKEN:-}" ]]; then
   export VAULT_TOKEN
 fi
 
+setup_script=""
 cleanup() {
+  if [[ -n "$setup_script" ]]; then
+    rm -f "$setup_script"
+  fi
   unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 }
 trap cleanup EXIT
 
-curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node "$AGENT_PROXY_DOMAIN" --with-observability
+setup_script="$(mktemp /tmp/xconnect-setup-proxy.XXXXXX.sh)"
+curl --fail --silent --show-error --location --retry 3 \
+  --output "$setup_script" \
+  https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh
+bash "$setup_script" --node "$AGENT_PROXY_DOMAIN" --with-observability
