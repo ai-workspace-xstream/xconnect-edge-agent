@@ -775,7 +775,8 @@ Env (optional):
   CADDY_REVERSE_PROXY_LOG_LEVEL=ERROR  # retain reverse_proxy errors only
   VECTOR_AUTH_USER            # ingest credentials supplied by Vault at runtime
   VECTOR_AUTH_PASSWORD
-  VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability
+  VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability; accepts AGENT_PROXY_VECTOR_VAULT_KV_PATH
+  INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH # default kv/data/prod/accounts/runtime
   OBSERVABILITY_ENDPOINT     # defaults to https://observability.svc.plus
   OBSERVABILITY_PLAYBOOKS_REF # immutable playbooks commit (see helper default)
   AUTH_URL
