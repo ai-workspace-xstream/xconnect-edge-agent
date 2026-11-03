@@ -106,7 +106,8 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
 
     def test_billing_snapshot_fanout_remains_enabled_when_requested(self):
-        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true')
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true',
+                                 BILLING_SERVICE_URL='https://billing.example.test')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['vector_billing_ingest_enabled'])
@@ -145,17 +146,37 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertFalse((self.work / 'inventory').exists())
 
     def test_default_playbooks_revision_contains_vault_environment_handoff(self):
-        playbooks_revision = '3f2bad6acbe8ff1c5db428d55b47297b6bc89794'
+        playbooks_revision = '0f9a2cc012a9440278e45feafe0389e8cc8dff6f'
         helper = (ROOT / 'scripts/setup-observability.sh').read_text()
         installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF:-{playbooks_revision}', helper)
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF={playbooks_revision}', installer)
 
     def test_xray_metrics_repair_is_opt_in(self):
-        result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true')
+        result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true',
+                                 XRAY_EXPORTER_XRAY_API_PORT='28080',
+                                 XRAY_EXPORTER_TCP_XRAY_API_PORT='28081')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['xray_exporter_repair_xray_services_enabled'])
+        self.assertEqual(values['xray_exporter_xray_api_port'], 28080)
+        self.assertEqual(values['xray_exporter_tcp_xray_api_port'], 28081)
+        self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
+        self.assertEqual(values['xray_exporter_tcp_xray_api_addr'], '127.0.0.1:28081')
+
+    def test_billing_ingest_url_is_handed_to_playbooks(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true',
+                                 BILLING_SERVICE_URL='https://billing.example.test')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertTrue(values['vector_billing_ingest_enabled'])
+        self.assertEqual(values['vector_billing_ingest_url'],
+                         'https://billing.example.test/v1/ingest/snapshots')
+
+    def test_billing_ingest_rejects_missing_endpoint(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true', BILLING_SERVICE_URL='')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('BILLING_SERVICE_URL is required', result.stderr)
 
     def test_combined_preflight_before_node_mutations(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
