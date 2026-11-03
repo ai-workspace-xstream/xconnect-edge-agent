@@ -67,6 +67,13 @@ billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower
 xray_repair_enabled = os.environ.get('XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED', 'false').lower() in ('true', '1', 'yes')
 xhttp_api_port = int(os.environ.get('XRAY_EXPORTER_XRAY_API_PORT', '10086'))
 tcp_api_port = int(os.environ.get('XRAY_EXPORTER_TCP_XRAY_API_PORT', '10087'))
+billing_ingest_url = os.environ.get('VECTOR_BILLING_INGEST_URL', '').strip()
+if not billing_ingest_url:
+    billing_service_url = os.environ.get('BILLING_SERVICE_URL', '').strip().rstrip('/')
+    if billing_service_url:
+        billing_ingest_url = billing_service_url if billing_service_url.endswith('/v1/ingest/snapshots') else billing_service_url + '/v1/ingest/snapshots'
+if billing_enabled and not billing_ingest_url:
+    raise SystemExit('VECTOR_BILLING_INGEST_URL or BILLING_SERVICE_URL is required when billing snapshots are enabled')
 vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
     'xray_exporter': {'hosts': {node: {}}},
@@ -91,6 +98,7 @@ vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 
     'vector_caddy_metrics_endpoint': 'http://127.0.0.1:2019/metrics',
     'vector_system_journald_enabled': True,
     'vector_billing_ingest_enabled': billing_enabled,
+    'vector_billing_ingest_url': billing_ingest_url,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
     'xray_exporter_repair_xray_services_enabled': xray_repair_enabled,
     'xray_exporter_xray_api_port': xhttp_api_port,

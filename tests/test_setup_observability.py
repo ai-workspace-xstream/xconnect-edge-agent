@@ -106,7 +106,8 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
 
     def test_billing_snapshot_fanout_remains_enabled_when_requested(self):
-        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true')
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true',
+                                 BILLING_SERVICE_URL='https://billing.example.test')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['vector_billing_ingest_enabled'])
@@ -162,6 +163,20 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertEqual(values['xray_exporter_tcp_xray_api_port'], 28081)
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
         self.assertEqual(values['xray_exporter_tcp_xray_api_addr'], '127.0.0.1:28081')
+
+    def test_billing_ingest_url_is_handed_to_playbooks(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true',
+                                 BILLING_SERVICE_URL='https://billing.example.test')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertTrue(values['vector_billing_ingest_enabled'])
+        self.assertEqual(values['vector_billing_ingest_url'],
+                         'https://billing.example.test/v1/ingest/snapshots')
+
+    def test_billing_ingest_rejects_missing_endpoint(self):
+        result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true', BILLING_SERVICE_URL='')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('BILLING_SERVICE_URL is required', result.stderr)
 
     def test_combined_preflight_before_node_mutations(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
