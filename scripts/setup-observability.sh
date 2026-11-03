@@ -65,6 +65,8 @@ def api_address(filename, fallback):
 
 billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
 xray_repair_enabled = os.environ.get('XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED', 'false').lower() in ('true', '1', 'yes')
+xhttp_api_port = int(os.environ.get('XRAY_EXPORTER_XRAY_API_PORT', '10086'))
+tcp_api_port = int(os.environ.get('XRAY_EXPORTER_TCP_XRAY_API_PORT', '10087'))
 vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
     'xray_exporter': {'hosts': {node: {}}},
@@ -91,6 +93,8 @@ vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 
     'vector_billing_ingest_enabled': billing_enabled,
     'xray_exporter_snapshot_features_enabled': billing_enabled,
     'xray_exporter_repair_xray_services_enabled': xray_repair_enabled,
+    'xray_exporter_xray_api_port': xhttp_api_port,
+    'xray_exporter_tcp_xray_api_port': tcp_api_port,
     'xray_exporter_tcp_certificate_domain': node,
     'xray_exporter_tcp_certificate_file': os.environ.get('XRAY_EXPORTER_TCP_CERTIFICATE_FILE', '/etc/caddy/tls/agent-proxy.crt'),
     'xray_exporter_tcp_key_file': os.environ.get('XRAY_EXPORTER_TCP_KEY_FILE', '/etc/caddy/tls/agent-proxy.key'),
@@ -100,8 +104,8 @@ vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 
     'xray_exporter_accounts_base_url': os.environ['AUTH_URL'],
     # Use the API listener from the rendered Xray config instead of assuming
     # the legacy StatsService ports 28080/28081.
-    'xray_exporter_xray_api_addr': api_address('config.json', '127.0.0.1:10086'),
-    'xray_exporter_tcp_xray_api_addr': api_address('tcp-config.json', '127.0.0.1:10087'),
+    'xray_exporter_xray_api_addr': ('127.0.0.1:' + str(xhttp_api_port)) if xray_repair_enabled else api_address('config.json', '127.0.0.1:10086'),
+    'xray_exporter_tcp_xray_api_addr': ('127.0.0.1:' + str(tcp_api_port)) if xray_repair_enabled else api_address('tcp-config.json', '127.0.0.1:10087'),
     'node_exporter_bind_addr': '127.0.0.1',
     'process_exporter_bind_addr': '127.0.0.1',
     'blackbox_listen': '127.0.0.1:9115',

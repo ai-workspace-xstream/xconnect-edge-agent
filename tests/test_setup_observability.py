@@ -152,10 +152,16 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF={playbooks_revision}', installer)
 
     def test_xray_metrics_repair_is_opt_in(self):
-        result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true')
+        result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true',
+                                 XRAY_EXPORTER_XRAY_API_PORT='28080',
+                                 XRAY_EXPORTER_TCP_XRAY_API_PORT='28081')
         self.assertEqual(result.returncode, 0, result.stderr)
         values = json.loads((self.work / 'vars').read_text())
         self.assertTrue(values['xray_exporter_repair_xray_services_enabled'])
+        self.assertEqual(values['xray_exporter_xray_api_port'], 28080)
+        self.assertEqual(values['xray_exporter_tcp_xray_api_port'], 28081)
+        self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:28080')
+        self.assertEqual(values['xray_exporter_tcp_xray_api_addr'], '127.0.0.1:28081')
 
     def test_combined_preflight_before_node_mutations(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
