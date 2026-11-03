@@ -86,6 +86,9 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertTrue(values['vector_system_journald_enabled'])
         self.assertEqual(values['xray_exporter_xray_api_addr'], '127.0.0.1:10086')
         self.assertEqual(values['xray_exporter_tcp_xray_api_addr'], '127.0.0.1:10087')
+        self.assertFalse(values['xray_exporter_repair_xray_services_enabled'])
+        self.assertEqual(values['xray_exporter_tcp_certificate_domain'], 'edge.example.test')
+        self.assertEqual(values['xray_exporter_tcp_certificate_file'], '/etc/caddy/tls/agent-proxy.crt')
         self.assertEqual(values['blackbox_listen'], '127.0.0.1:9115')
         for secret in ('test-only-agent-secret', 'test-only-vector-secret'):
             self.assertNotIn(secret, (self.work / 'vars').read_text() + result.stdout + result.stderr)
@@ -142,11 +145,17 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertFalse((self.work / 'inventory').exists())
 
     def test_default_playbooks_revision_contains_vault_environment_handoff(self):
-        playbooks_revision = 'b3f6f6f6eedfdb731b397f4aaa425b222f97e02c'
+        playbooks_revision = '3f2bad6acbe8ff1c5db428d55b47297b6bc89794'
         helper = (ROOT / 'scripts/setup-observability.sh').read_text()
         installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF:-{playbooks_revision}', helper)
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF={playbooks_revision}', installer)
+
+    def test_xray_metrics_repair_is_opt_in(self):
+        result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads((self.work / 'vars').read_text())
+        self.assertTrue(values['xray_exporter_repair_xray_services_enabled'])
 
     def test_combined_preflight_before_node_mutations(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
