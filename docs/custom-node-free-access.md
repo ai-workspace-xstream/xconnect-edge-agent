@@ -9,7 +9,7 @@ agent:
   teamId: ""
   allowedEmails:
     - free-user@example.com
-  entryPoint: custom-node.example.com
+  entryPoint: plus-node.example.com
 ```
 
 - 未配置或 false：按节点套餐门槛判断；`allowedEmails` 命中者可额外访问该节点。
