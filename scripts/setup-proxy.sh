@@ -1066,6 +1066,30 @@ PY_MONITORING
     unset monitoring_credentials
 fi
 
+# Resolve the service credential from its explicit Vault KV v2 reference.
+if [ -n "${INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH:-}" ]; then
+    : "${VAULT_ADDR:?VAULT_ADDR is required for the service credential}"
+    : "${VAULT_TOKEN:?VAULT_TOKEN is required for the service credential}"
+    INTERNAL_SERVICE_TOKEN="$(python3 - <<'PY_SERVICE_TOKEN'
+import json, os, urllib.request
+path = os.environ['INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH'].strip('/')
+if not path.startswith('kv/data/') or '..' in path.split('/'):
+    raise SystemExit('Service credential requires an explicit kv/data/ path')
+request = urllib.request.Request(os.environ['VAULT_ADDR'].rstrip('/') + '/v1/' + path,
+    headers={'X-Vault-Token': os.environ['VAULT_TOKEN']})
+try:
+    with urllib.request.urlopen(request, timeout=15) as response:
+        token = json.load(response)['data']['data']['INTERNAL_SERVICE_TOKEN']
+    if not isinstance(token, str) or len(token) < 32 or any(c.isspace() for c in token):
+        raise ValueError('invalid credential')
+except Exception:
+    raise SystemExit('Could not resolve the service credential from Vault')
+print(token)
+PY_SERVICE_TOKEN
+)"
+    export INTERNAL_SERVICE_TOKEN
+fi
+
 # Fail before changing the node when the requested combined deployment is incomplete.
 if is_truthy "$INSTALL_OBSERVABILITY"; then
     if [ "$STANDALONE_MODE" = true ]; then

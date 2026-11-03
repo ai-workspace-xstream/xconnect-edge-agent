@@ -10,7 +10,7 @@ umask 077
 : "${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN must be supplied from Vault}"
 export OBSERVABILITY_ENDPOINT="${OBSERVABILITY_ENDPOINT:-https://observability.svc.plus}"
 # Tested canonical playbook revision; override with a reviewed immutable commit.
-OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-31ae41832ea43b2eca73a63b2d2808b0d0b69f77}"
+OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-48cee24bcb3ddf0cec9a9d74f60761ac6df57f82}"
 if [[ ! "$OBSERVABILITY_PLAYBOOKS_REF" =~ ^[a-f0-9]{40}$ ]]; then
     echo 'OBSERVABILITY_PLAYBOOKS_REF must be a full commit SHA.' >&2
     exit 1
@@ -66,6 +66,7 @@ def api_address(filename, fallback):
 billing_enabled = os.environ.get('VECTOR_BILLING_INGEST_ENABLED', 'false').lower() in ('true', '1', 'yes')
 vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 'false').lower() in ('true', '1', 'yes')
 (root / 'inventory.json').write_text(json.dumps({'all': {'children': {
+    'xray_exporter': {'hosts': {node: {}}},
     'agent_proxy': {'hosts': {node: {'ansible_connection': 'local',
                                   'ansible_python_interpreter': '/usr/bin/python3'}}}
 }}}))
@@ -77,7 +78,7 @@ vault_cert_auth_enabled = os.environ.get('AGENT_PROXY_VAULT_CERT_AUTH_ENABLED', 
     'agent_proxy_vector_vault_auth_cert_policy': os.environ.get('AGENT_PROXY_VAULT_CERT_POLICY', ''),
     'agent_proxy_vector_vault_auth_cert_field_prefix': os.environ.get('AGENT_PROXY_VAULT_CERT_FIELD_PREFIX', ''),
     'agent_proxy_vector_vault_auth_cert_kv_path': os.environ.get('AGENT_PROXY_CERT_VAULT_PATH', ''),
-    'xray_exporter_hosts': 'agent_proxy',
+    'xray_exporter_hosts': 'xray_exporter',
     'vector_observability_endpoint': os.environ['OBSERVABILITY_ENDPOINT'].rstrip('/'),
     'vector_observability_service_domain': node,
     'vector_observability_environment': os.environ.get('DEPLOY_ENV', 'production'),
@@ -118,6 +119,7 @@ for service in xconnect-edge-agent xray xray-tcp caddy node-exporter process-exp
         echo "Required service is not active: $service" >&2
         exit 1
     }
+    printf "PASS service %s\n" "$service"
 done
 for port in 9100 9256; do
     curl -fsS --max-time 10 "http://127.0.0.1:$port/metrics" -o /dev/null
