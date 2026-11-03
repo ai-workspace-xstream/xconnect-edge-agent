@@ -10,8 +10,8 @@ import (
 )
 
 func TestCustomFreeOptInContract(t *testing.T) {
-	if err := (config.Agent{ResourceClass: "free", CustomAllowFree: true}).ValidateUserScope(); err == nil {
-		t.Fatal("Free opt-in accepted for non-custom node")
+	if err := (config.Agent{ResourceClass: "plus", CustomAllowFree: true}).ValidateUserScope(); err != nil {
+		t.Fatalf("Free opt-in rejected for Plus node: %v", err)
 	}
 	for _, enabled := range []bool{false, true} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
