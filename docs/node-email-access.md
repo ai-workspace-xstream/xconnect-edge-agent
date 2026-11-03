@@ -17,6 +17,8 @@ agent:
     - bob@example.com
 ```
 
+`allowedEmails` 默认为空列表，省略或 `[]` 不增加任何用户。白名单独立生效，不依赖 `customAllowFree`；该开关开启也不能让名单外的 Free 用户访问 Plus/Pro 节点。完整规则与行为对照见 [Free 准入与白名单](custom-node-free-access.md)。
+
 Plus/Pro 用户继续按原规则使用该 Plus 节点，即使没有列在邮箱名单中。Alice、Bob 即使是 Free，也额外允许使用此节点；其他 Free 用户仍不允许。邮箱只授予所配置节点的资格，不升级套餐、不增加额度、不提供免流，也不会创建新的节点。
 
 支持公开等级 shared、free、plus、pro；不配置名单保持原行为。环境变量仍接受单个邮箱或 JSON 邮箱数组；去空白、忽略大小写、去重，最多 256 项，不允许通配符和显示名称。YAML allowedEmails 可用空数组撤销补充授权。全局变量遵循既有优先级，修改后按现有部署方式重启 Agent。
