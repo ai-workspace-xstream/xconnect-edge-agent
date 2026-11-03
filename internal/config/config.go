@@ -78,8 +78,12 @@ func (a Agent) ValidateUserScope() error {
 	if _, err := agentproto.NormalizeNodeEmails(a.AllowedEmails); err != nil {
 		return err
 	}
-	if a.CustomAllowFree && a.ResourceClass != "custom" {
-		return fmt.Errorf("agent.customAllowFree requires resourceClass custom")
+	if a.CustomAllowFree {
+		switch a.ResourceClass {
+		case "shared", "free", "plus", "pro", "custom", "team":
+		default:
+			return fmt.Errorf("agent.customAllowFree requires an explicit resourceClass")
+		}
 	}
 	for _, email := range a.AllowedEmails {
 		parsed, err := mail.ParseAddress(strings.TrimSpace(email))
