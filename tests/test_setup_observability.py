@@ -133,6 +133,13 @@ exit "${{INGEST_EXIT:-0}}"
             self.assertNotEqual(self.run_helper(**values).returncode, 0)
         self.assertFalse((self.work / 'inventory').exists())
 
+    def test_default_playbooks_revision_contains_vault_environment_handoff(self):
+        playbooks_revision = 'b3f6f6f6eedfdb731b397f4aaa425b222f97e02c'
+        helper = (ROOT / 'scripts/setup-observability.sh').read_text()
+        installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
+        self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF:-{playbooks_revision}', helper)
+        self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF={playbooks_revision}', installer)
+
     def test_combined_preflight_before_node_mutations(self):
         result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
                                  '--node', 'edge.example.test', '--with-observability'],
