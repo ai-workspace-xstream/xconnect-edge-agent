@@ -138,7 +138,8 @@ exit "${{INGEST_EXIT:-0}}"
                                  '--node', 'edge.example.test', '--with-observability'],
                                 env=dict(self.env, VECTOR_AUTH_PASSWORD=''), capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Combined deployment requires', result.stderr)
+        self.assertIn('Combined deployment is missing:', result.stderr)
+        self.assertIn('VECTOR_AUTH_PASSWORD', result.stderr)
         self.assertFalse((self.work / 'services').exists())
 
 

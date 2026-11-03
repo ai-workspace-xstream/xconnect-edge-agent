@@ -775,7 +775,8 @@ Env (optional):
   CADDY_REVERSE_PROXY_LOG_LEVEL=ERROR  # retain reverse_proxy errors only
   VECTOR_AUTH_USER            # ingest credentials supplied by Vault at runtime
   VECTOR_AUTH_PASSWORD
-  VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability
+  VAULT_OBSERVABILITY_SECRET_PATH # default kv/data/CICD/observability; accepts AGENT_PROXY_VECTOR_VAULT_KV_PATH
+  INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH # default kv/data/prod/accounts/runtime
   OBSERVABILITY_ENDPOINT     # defaults to https://observability.svc.plus
   OBSERVABILITY_PLAYBOOKS_REF # immutable playbooks commit (see helper default)
   AUTH_URL
@@ -1036,6 +1037,16 @@ fi
 
 # The combined installer can resolve monitoring credentials from the same
 # runtime Vault session used for TLS. Never echo the resulting values.
+# Keep the init.sh interface stable: its established observability path name
+# is an alias for the installer's Vault KV v2 path.
+VAULT_OBSERVABILITY_SECRET_PATH="${VAULT_OBSERVABILITY_SECRET_PATH:-${AGENT_PROXY_VECTOR_VAULT_KV_PATH:-kv/data/CICD/observability}}"
+
+# The shared accounts service token has one canonical Vault source. Allow an
+# explicit override for controlled environments, while keeping init.sh simple.
+if is_truthy "$INSTALL_OBSERVABILITY" && [ -z "${INTERNAL_SERVICE_TOKEN:-}" ]; then
+    INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH="${INTERNAL_SERVICE_TOKEN_VAULT_KV_PATH:-kv/data/prod/accounts/runtime}"
+fi
+
 if is_truthy "$INSTALL_OBSERVABILITY" &&
    { [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ]; } &&
    [ -n "${VAULT_ADDR:-}" ] && [ -n "${VAULT_TOKEN:-}" ]; then
@@ -1096,10 +1107,14 @@ if is_truthy "$INSTALL_OBSERVABILITY"; then
         echo "--with-observability requires a managed-node installation." >&2
         exit 1
     fi
-    if [ -z "$AUTH_URL" ] || [ -z "$INTERNAL_SERVICE_TOKEN" ] ||
-       [ -z "${VECTOR_AUTH_USER:-}" ] || [ -z "${VECTOR_AUTH_PASSWORD:-}" ] ||
-       [ -z "$BILLING_URL" ]; then
-        echo "Combined deployment requires AUTH_URL, INTERNAL_SERVICE_TOKEN, BILLING_URL, VECTOR_AUTH_USER and VECTOR_AUTH_PASSWORD from Vault." >&2
+    missing_combined_values=()
+    [ -n "$AUTH_URL" ] || missing_combined_values+=(AUTH_URL)
+    [ -n "$INTERNAL_SERVICE_TOKEN" ] || missing_combined_values+=(INTERNAL_SERVICE_TOKEN)
+    [ -n "$BILLING_URL" ] || missing_combined_values+=(BILLING_URL)
+    [ -n "${VECTOR_AUTH_USER:-}" ] || missing_combined_values+=(VECTOR_AUTH_USER)
+    [ -n "${VECTOR_AUTH_PASSWORD:-}" ] || missing_combined_values+=(VECTOR_AUTH_PASSWORD)
+    if [ "${#missing_combined_values[@]}" -gt 0 ]; then
+        echo "Combined deployment is missing: ${missing_combined_values[*]}. Check Vault access and KV paths." >&2
         exit 1
     fi
 fi
