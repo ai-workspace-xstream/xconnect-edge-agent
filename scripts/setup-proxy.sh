@@ -790,7 +790,7 @@ Env (optional):
   AGENT_RELEASE_TAG=v2026.10.10-r1  # optional: pin an agent release
   XRAY_REPO=ai-workspace-xstream/Xray-core
   XRAY_RELEASE_TAG=v26.3.27-uat-r3  # optional: pin an Xray release
-  OBSERVABILITY_PLAYBOOKS_REF=0886a0844317dd12fabe9c322fea79a2d35d377f  # immutable SHA
+  OBSERVABILITY_PLAYBOOKS_REF=0f9a2cc012a9440278e45feafe0389e8cc8dff6f  # immutable SHA
   VAULT_ADDR                  # enables Vault Agent TLS sync when combined with token/path
   VAULT_TOKEN                 # read at runtime; never commit to this script
   VAULT_TLS_SECRET_PATH       # Vault KV v2 API path, e.g. kv/data/CICD/domains/<domain>

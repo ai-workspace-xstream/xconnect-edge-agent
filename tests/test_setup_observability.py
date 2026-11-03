@@ -146,7 +146,7 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertFalse((self.work / 'inventory').exists())
 
     def test_default_playbooks_revision_contains_vault_environment_handoff(self):
-        playbooks_revision = '0886a0844317dd12fabe9c322fea79a2d35d377f'
+        playbooks_revision = '0f9a2cc012a9440278e45feafe0389e8cc8dff6f'
         helper = (ROOT / 'scripts/setup-observability.sh').read_text()
         installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
         self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF:-{playbooks_revision}', helper)
