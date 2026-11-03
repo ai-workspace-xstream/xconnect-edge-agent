@@ -1,31 +1,75 @@
 # 节点 Free 准入与邮箱白名单
 
-`agent.customAllowFree` 默认为 `false`，可与 `shared`、`free`、`plus`、`pro`、`custom` 和 `team` 组合。它只控制节点准入，不改变用户套餐、配额或账号状态。
+关联需求：https://github.com/ai-workspace-xstream/xconnect-edge-agent/issues/141
+
+## 准入规则
+
+1. **套餐准入照旧**：Plus/Pro 用户按节点等级门槛访问，不改变套餐、配额或团队隔离。
+2. **`allowedEmails` 是独立白名单**：公开 shared/free/plus/pro 节点中，邮箱匹配者额外获得该节点访问权，可越过套餐门槛，不依赖 `customAllowFree`。默认空列表；省略或空列表不增加任何用户。
+3. **`customAllowFree` 不扩大到所有 Free 用户**：默认为 `false`，必须结合非空 `allowedEmails` 才能产生额外 Free 准入，只作用于名单范围。名单为空时，即使为 `true`，也不能额外放行 Free 用户。公开节点的邮箱白名单独立生效，因此关闭此开关不会撤销名单本身授予的访问权。
+4. **`custom` 节点**必须配置非空 `allowedEmails`，Plus/Pro 用户也必须命中名单；名单中的 Free 用户还需 `customAllowFree: true`。
+5. **现有限制始终执行**：账号停用、流量暂停、黑名单、有效期、配额和团队隔离继续生效，不升级用户套餐，不修改 SQL schema。team 节点继续按团队成员关系授权，不接受邮箱扩权配置。
+
+名单为空不影响套餐原本允许的用户。例如 free/shared 节点原本可接纳的 Free 用户仍按原套餐规则访问。
+
+## Plus 节点行为对照
+
+下表只列出额外获得访问权的 Free 用户；原本符合套餐门槛的用户始终按既有规则访问。
+
+| `customAllowFree` | `allowedEmails` | 额外获得访问权的 Free 用户 |
+| --- | --- | --- |
+| 省略或 `false` | 省略或 `[]` | 无 |
+| `true` | `[]` | 无 |
+| 省略或 `false` | `[alice@example.com]` | 仅 Alice |
+| `true` | `[alice@example.com]` | 仅 Alice |
+
+custom 节点中，相同名单在开关关闭时不放行 Free，开启后仅放行名单中的 Free 用户。
+
+## 配置示例
+
+公开 Plus 节点默认不增加白名单用户：
 
 ```yaml
 agent:
   resourceClass: plus
-  customAllowFree: true
   teamId: ""
-  allowedEmails:
-    - free-user@example.com
-  entryPoint: plus-node.example.com
+  customAllowFree: false
+  allowedEmails: []
 ```
 
-- 未配置或 false：按节点套餐门槛判断；`allowedEmails` 命中者可额外访问该节点。
-- `true`：Free 用户也可访问该节点。custom 节点仍必须命中其 `allowedEmails` 白名单。
-- `allowedEmails` 对公开套餐节点是额外准入白名单：命中可越过套餐门槛，但只增加该节点访问权，不升级套餐。空字符串、通配符和无效地址均拒绝。
-- team 节点仍严格检查团队成员关系；`customAllowFree` 不会让白名单或 Free 准入跨越团队隔离。
-- 账号停用、流量暂停、黑名单和配额耗尽仍由 Accounts 判定。
-- 新用户是否需要验证邮箱遵循 Accounts 当前注册策略，此开关不改变邮箱验证或账号状态。
-- 单节点与未来虚拟节点均按各节点独立配置，不是宿主机全局免流或套餐开关。
+白名单可独立生效，以下配置允许 Alice、Bob 额外访问此 Plus 节点，包括他们使用 Free 套餐时：
 
-需要同时升级 Accounts 与 Agent；先发布 Accounts，再更新 Agent。Agent 通过 `X-Agent-Custom-Allow-Free: true` 声明意图。公开节点仅允许具备 public-pool 管理权限的认证部署凭据启用；team 节点仅允许同一已登记节点和团队范围内的凭据启用。默认关闭不会改变现有节点授权。
+```yaml
+agent:
+  resourceClass: plus
+  teamId: ""
+  customAllowFree: false
+  allowedEmails:
+    - alice@example.com
+    - bob@example.com
+```
 
-Accounts 在用户快照 scope 中返回 `customAllowFree`，Agent 校验回执，旧后端不识别时拒绝同步而非静默宣称已启用。用户事件流和用户快照使用相同过滤规则；节点列表/区域、订阅使用服务端认可的 scope 和邮箱名单，配置开关不会改变传输路径。
+将上例的 `customAllowFree` 改为 `true`，也不会增加名单之外的 Free 用户。
 
-修改 `/etc/agent/account-agent.yaml` 后按现有部署方式受控重启 Agent；它会同步其 Xray 目标。检查两个传输后端的配置与服务健康，不能仅凭 Agent active 判断用户可连接。无需修改既有 init.sh；以后重新执行安装脚本可能重新渲染 YAML，运维应通过配置所有者保留此选项。
+custom 专属节点仅对名单开放，开启开关后允许名单中的 Free 用户：
 
-回退时先置 false 并重启新版 Agent，确认 Free 用户从 Xray 和节点列表撤销，再按需回退二进制；回退 Accounts 前先关闭节点开关。不删除用户、配置用户套餐或修改 SQL schema。
+```yaml
+agent:
+  resourceClass: custom
+  teamId: ""
+  customAllowFree: true
+  allowedEmails:
+    - alice@example.com
+```
 
-公开 free/plus/pro/shared 节点的邮箱补充授权采用并集，见 [公开节点邮箱授权](node-email-access.md)。custom 节点仍受其非空名单限制。
+`AGENT_CUSTOM_EMAILS` 对应 YAML 的 `allowedEmails`，支持单个邮箱或 JSON 数组。YAML 中 `[]` 表示没有补充名单；`[""]` 是无效地址，不能用来表示空名单。邮箱去空白、忽略大小写，不允许通配符。环境变量优先级与现有安装器一致。
+
+## 同步与发布
+
+Accounts 用户快照、事件流、区域和节点列表、订阅导出必须采用相同的准入规则。Agent 校验服务端 scope 和名单摘要回执。名单只增加所配置节点的资格，不授予额外额度或免流，也不会改变传输路径。
+
+先发布配套 Accounts，再更新 Agent。修改配置后完成受控同步，核对 Xray 实际客户端名单及名单内外用户的节点列表，不能仅凭服务 active 或同步数量确认准入正确。现有线上版本是否满足本规则，需单独进行运行验证。
+
+撤销公开节点的补充授权应移除对应邮箱并确认同步；仅关闭 `customAllowFree` 不会撤销独立白名单。custom 节点可关闭开关撤销名单中 Free 用户的资格。回退前先完成资格撤销，旧连接终止遵循既有会话撤销能力。
+
+公开节点的并集协议、权限和发布顺序详见 [公开节点邮箱授权](node-email-access.md)。
