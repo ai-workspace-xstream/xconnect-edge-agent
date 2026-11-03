@@ -10,7 +10,7 @@ umask 077
 : "${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN must be supplied from Vault}"
 export OBSERVABILITY_ENDPOINT="${OBSERVABILITY_ENDPOINT:-https://observability.svc.plus}"
 # Tested canonical playbook revision; override with a reviewed immutable commit.
-OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-7c7b646130eca2b7dcfe86461f6d35fff773653a}"
+OBSERVABILITY_PLAYBOOKS_REF="${OBSERVABILITY_PLAYBOOKS_REF:-48cee24bcb3ddf0cec9a9d74f60761ac6df57f82}"
 if [[ ! "$OBSERVABILITY_PLAYBOOKS_REF" =~ ^[a-f0-9]{40}$ ]]; then
     echo 'OBSERVABILITY_PLAYBOOKS_REF must be a full commit SHA.' >&2
     exit 1
