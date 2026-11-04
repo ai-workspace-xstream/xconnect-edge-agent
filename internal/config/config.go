@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,11 +17,13 @@ import (
 )
 
 type Config struct {
-	Mode    string  `yaml:"mode"`
-	Log     Log     `yaml:"log"`
-	Agent   Agent   `yaml:"agent"`
-	Xray    Xray    `yaml:"xray"`
-	Billing Billing `yaml:"billing"`
+	ConfigVersion int          `yaml:"configVersion"`
+	VirtualNodes  VirtualNodes `yaml:"virtualNodes"`
+	Mode          string       `yaml:"mode"`
+	Log           Log          `yaml:"log"`
+	Agent         Agent        `yaml:"agent"`
+	Xray          Xray         `yaml:"xray"`
+	Billing       Billing      `yaml:"billing"`
 }
 
 type Log struct {
@@ -175,11 +178,38 @@ func Load(path string) (*Config, error) {
 }
 
 func LoadReader(r io.Reader) (*Config, error) {
+	payload, err := io.ReadAll(io.LimitReader(r, (4<<20)+1))
+	if err != nil {
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+	if len(payload) > 4<<20 {
+		return nil, fmt.Errorf("config exceeds 4 MiB limit")
+	}
 	var cfg Config
-	if err := yaml.NewDecoder(r).Decode(&cfg); err != nil {
+	versioned, err := checkConfigEnvelope(payload)
+	if err != nil {
+		return nil, err
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(payload))
+	decoder.KnownFields(versioned)
+	if err := decoder.Decode(&cfg); err != nil {
+		if versioned {
+			return nil, fmt.Errorf("decode v2 config: invalid field or type (values omitted)")
+		}
 		return nil, fmt.Errorf("decode config: %w", err)
 	}
 
+	if cfg.VirtualNodes.Enabled {
+		for _, key := range []string{"AuthUrl", "INTERNAL_SERVICE_TOKEN", "DOMAIN", "XCONNECT_ROLE", "AGENT_RESOURCE_CLASS", "AGENT_TEAM_ID", "AGENT_CUSTOM_EMAILS"} {
+			if _, exists := os.LookupEnv(key); exists {
+				return nil, fmt.Errorf("virtualNodes conflicts with environment variable %s", key)
+			}
+		}
+		if len(cfg.VirtualNodes.Nodes) == 0 {
+			return nil, fmt.Errorf("virtualNodes.nodes must not be empty")
+		}
+		return nil, ErrVirtualNodesNotReady
+	}
 	if authURL := os.Getenv("AuthUrl"); authURL != "" {
 		cfg.Agent.ControllerURL = authURL
 	}

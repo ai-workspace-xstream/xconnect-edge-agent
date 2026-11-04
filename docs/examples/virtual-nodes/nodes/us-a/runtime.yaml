@@ -1,0 +1,35 @@
+# DRAFT：由部署侧预置与校验；Agent 只能操作已批准的实例服务。
+configVersion: 2
+kind: xray-runtime
+nodeId: us-a
+driver: systemd
+xray:
+  service: xray-node@us-a.service
+  binaryPath: /usr/local/lib/xray/pinned/xray
+  artifactManifest: /etc/agent/artifacts/xray.yaml
+  configPath: /var/lib/agent/nodes/us-a/xray.json
+  user: xray-us-a
+  group: xray-us-a
+  stateDir: /var/lib/xray/nodes/us-a
+  logDir: /var/log/xray/nodes/us-a
+  resources:
+    cpuQuotaPercent: 100
+    memoryMaxBytes: 536870912
+  health:
+    type: tcp
+    endpoint: 127.0.0.1:12001
+    interval: 15s
+    timeout: 3s
+  stopTimeout: 30s
+ingress:
+  owner: shared-caddy
+  host: us-a.example.com
+  publicPort: 443
+  transport: xhttp
+  path: /split
+  upstream: http://127.0.0.1:12001
+  tlsTermination: caddy
+exporter:
+  service: xray-exporter@us-a.service
+  listenAddress: 127.0.0.1:19101
+  sourceId: us-a-xhttp

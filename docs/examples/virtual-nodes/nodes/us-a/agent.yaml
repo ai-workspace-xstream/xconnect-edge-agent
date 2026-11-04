@@ -1,0 +1,46 @@
+# DRAFT：独立节点业务配置，不单独启动 Agent 进程。
+configVersion: 2
+kind: virtual-node
+agent:
+  id: us-a
+  nodeId: us-a
+  role: agent-proxy
+  controllerUrl: https://accounts.example.com
+  credentialFile: /run/credentials/xconnect-edge-agent/us-a-accounts-token
+  domain: us-a.example.com
+  entryPoint: us-a.example.com
+  region: us
+  pool: us
+  resourceClass: plus
+  teamId: ""
+  allowedEmails: []
+  openToUsers: true # 入口发布意愿，不扩大 resourceClass/custom 的服务端授权范围。
+  statsEnabled: true
+  httpTimeout: 15s
+  statusInterval: 1m
+  syncInterval: 5m
+  tls:
+    insecureSkipVerify: false
+xray:
+  sync:
+    enabled: true
+    interval: 5m
+    targets:
+      - name: xhttp
+        templatePath: xray-template.json
+        outputPath: /var/lib/agent/nodes/us-a/xray.json
+        dynamicUsers:
+          enabled: true
+          server: 127.0.0.1:11001
+          executable: /usr/local/lib/xray/pinned/xray
+          terminateSessions: false
+metering:
+  enabled: true
+  collector: external-exporter
+  sourceId: us-a-xhttp
+  statsProtocol: xray-grpc
+  statsEndpoint: 127.0.0.1:11001
+  counterMode: cumulative
+  resetOnRead: false
+  scrapeInterval: 15s
+  stateDir: /var/lib/agent/nodes/us-a/metering

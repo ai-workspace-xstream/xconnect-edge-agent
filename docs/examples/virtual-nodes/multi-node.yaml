@@ -1,0 +1,18 @@
+# DRAFT config v2：待实现，不可直接交给当前 Agent。
+# 拷贝目录结构到 /etc/agent/ 后使用；所有生产域名与制品须另行配置。
+configVersion: 2
+mode: agent
+log:
+  level: info
+virtualNodes:
+  enabled: true
+  hostId: host-us-01
+  configRoot: /etc/agent/nodes
+  maxConcurrentReconciles: 2
+  nodes:
+    - configFile: nodes/us-a/agent.yaml
+      runtimeFile: nodes/us-a/runtime.yaml
+    - configFile: nodes/us-b/agent.yaml
+      runtimeFile: nodes/us-b/runtime.yaml
+billing:
+  enabled: false # 如已有单机作业触发，保留现有值；最多由主进程启动一套。
