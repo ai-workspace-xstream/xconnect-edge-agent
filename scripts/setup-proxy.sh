@@ -8,7 +8,7 @@ if [ "${XCONNECT_SETUP_PROXY_BOOTSTRAPPED:-0}" != 1 ]; then
     self_update_url="${XCONNECT_SETUP_PROXY_URL:-https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh}"
     self_update_file="$(mktemp /tmp/xconnect-setup-proxy.XXXXXX.sh)"
     trap 'rm -f "$self_update_file"' EXIT
-    if ! curl -fsSL --retry 3 --connect-timeout 10 "$self_update_url" -o "$self_update_file"; then
+    if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 "$self_update_url" -o "$self_update_file"; then
         echo "Failed to download the current setup-proxy.sh from $self_update_url" >&2
         exit 1
     fi
@@ -446,7 +446,7 @@ install_prebuilt_runtime_bundle() {
     bundle_url="$(resolve_release_download_url "${asset_name}")"
 
     echo "Downloading runtime bundle: ${asset_name}"
-    if curl -fL --retry 3 --connect-timeout 10 -o "${tmp_dir}/${asset_name}" "${bundle_url}" 2>/dev/null; then
+    if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "${tmp_dir}/${asset_name}" "${bundle_url}"; then
         bundle_downloaded=true
     else
         # Try resolving hashed bundle asset (e.g. artifact-${goarch}-<commit>.tar.gz)
@@ -461,7 +461,7 @@ install_prebuilt_runtime_bundle() {
             grep -oE "https://[^\" ]+/download/[^\" ]+/artifact-${goarch}[^\" ]*\.tar\.gz" | head -n 1 || true)"
         if [ -n "${matched_bundle_url}" ]; then
             echo "Downloading hashed runtime bundle: ${matched_bundle_url}"
-            if curl -fL --retry 3 --connect-timeout 10 -o "${tmp_dir}/${asset_name}" "${matched_bundle_url}" 2>/dev/null; then
+            if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "${tmp_dir}/${asset_name}" "${matched_bundle_url}"; then
                 bundle_downloaded=true
             fi
         fi
@@ -501,7 +501,7 @@ install_prebuilt_runtime_bundle() {
         for bin_name in "xconnect-edge-agent-linux-${goarch}" "agent-svc-plus-linux-${goarch}"; do
             local direct_url
             direct_url="$(resolve_release_download_url "${bin_name}")"
-            if curl -fL --retry 3 --connect-timeout 10 -o "${tmp_dir}/xconnect-edge-agent" "${direct_url}" 2>/dev/null; then
+            if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "${tmp_dir}/xconnect-edge-agent" "${direct_url}"; then
                 chmod +x "${tmp_dir}/xconnect-edge-agent"
                 agent_bin="${tmp_dir}/xconnect-edge-agent"
                 echo -e "${GREEN}Downloaded ${bin_name} directly.${NC}"
@@ -514,7 +514,7 @@ install_prebuilt_runtime_bundle() {
         echo -e "${YELLOW}Caddy binary not found in bundle, attempting direct binary download...${NC}"
         local caddy_url
         caddy_url="$(resolve_release_download_url "caddy-linux-${goarch}")"
-        if curl -fL --retry 3 --connect-timeout 10 -o "${tmp_dir}/caddy" "${caddy_url}" 2>/dev/null; then
+        if curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o "${tmp_dir}/caddy" "${caddy_url}"; then
             chmod +x "${tmp_dir}/caddy"
             caddy_bin="${tmp_dir}/caddy"
             echo -e "${GREEN}Downloaded caddy-linux-${goarch} directly.${NC}"
@@ -539,7 +539,7 @@ fetch_repo_archive() {
     local extracted_dir
     tmp_dir="$(mktemp -d /tmp/agent-repo.XXXXXX)"
 
-    curl -fL --retry 3 --connect-timeout 10 \
+    curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 \
         "https://github.com/${GITHUB_REPO}/archive/refs/heads/main.tar.gz" \
         -o "${tmp_dir}/repo.tar.gz"
     tar -xzf "${tmp_dir}/repo.tar.gz" -C "${tmp_dir}"
