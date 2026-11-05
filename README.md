@@ -55,7 +55,7 @@ Proxy Server 与 Full 控制端是两个独立部署目标。区域、节点池�
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node xhttp.example.com --standalone
+  bash -s -- --operation standalone --node xhttp.example.com
 ```
 
 ### 3. 托管、共享或团队节点
@@ -221,11 +221,9 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 unset INTERNAL_SERVICE_TOKEN VAULT_TOKEN
 ```
 
-如果需要脚本通过 Cloudflare API 更新 DNS，再从当前 Shell 提供
-`CLOUDFLARE_ZONE_NAME` 和 `CLOUDFLARE_API_TOKEN`；没有设置 zone 时脚本会跳过
-自动 DNS 更新。不要把 Cloudflare token 写入命令行参数、文档或仓库。
+DNS 记录由 IaC 管理；安装入口不会调用 Cloudflare API 或修改 DNS。
 
-脚本会完成以下工作：
+Playbooks Role 会完成以下工作：
 
 - 安装或更新 Xray、Caddy 和 `xconnect-edge-agent`；
 - 生成 `/etc/agent/account-agent.yaml`，把 `agent.id` 写成 `--node` 的值；
@@ -249,8 +247,9 @@ Vault token 只授予该 KV 路径的读取权限。
 
 ### 4. 已安装节点修改 accounts / billing 地址或 token
 
-重新执行上面的安装命令即可更新 Agent 配置；如果只执行 `--upgrade-only`，配置文件
-不会被覆盖，适合只升级二进制的场景。也可以直接编辑配置文件 `/etc/agent/account-agent.yaml`：
+重新执行上面的托管部署命令即可收敛 Agent 配置；只升级二进制时使用
+`--operation upgrade`，该 operation 会保留配置文件与证书。也可以直接编辑
+`/etc/agent/account-agent.yaml`：
 
 ```yaml
 mode: "agent"
@@ -378,23 +377,24 @@ systemctl is-active xconnect-edge-agent
 
 ## ⚙️ 常用进阶参数与配置
 
-一键安装脚本 `scripts/setup-proxy.sh` 提供了丰富的可选参数：
+`scripts/setup-proxy.sh` 是 Playbooks 入口包装器；主机变更由
+[`ai-workspace-infra/playbooks`](https://github.com/ai-workspace-infra/playbooks)
+中的 Agent Proxy Role 执行。入口支持 `deploy`、`standalone`、`upgrade` 和
+`print-arch` 四种 operation：
 
 ```bash
-# 1. 仅升级 Agent 与核心二进制（保留现有配置文件与证书不变）
+# 1. 仅升级 Agent 与 Xray 二进制（保留配置文件与证书）
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --upgrade-only
+  bash -s -- --operation upgrade
 
-# 2. 与 postgresql.svc.plus 数据库同机部署（自动放行 5443/tcp 端口）
+# 2. 与 stunnel 数据库入口同机部署（自动放行 5443/tcp 端口）
 OPEN_STUNNEL_5443=true \
 curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
   bash -s -- --node xhttp.example.com --open-stunnel-5443
-
-# 3. 搭配 Cloudflare API Token 自动配置 DNS 解析
-CLOUDFLARE_API_TOKEN="your-cf-token" \
-curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh | \
-  bash -s -- --node xhttp.example.com
 ```
+
+`print-arch` 也由 Playbooks Role 执行，仅报告架构，不安装软件。DNS 记录由
+IaC 管理，不由安装入口直接修改。
 
 ---
 

@@ -16,7 +16,8 @@ inventory；它们不依赖 Doco-CD，也不读取 Web SaaS 的部署配置。
 
 部署顺序如下：
 
-1. 先在目标节点完成 `scripts/setup-proxy.sh`，准备 Xray、Caddy、证书和必要配置。
+1. 该托管 Agent Server 使用专用 Ansible target；不要先以 standalone operation 部署。
+   通用单节点安装由 `scripts/setup-proxy.sh --operation deploy` 调用 Playbooks Role 完成。
 2. 从 `deploy/ansible` 分别执行 `./deploy.sh --uat-shared --deploy-only` 或
    `./deploy.sh --uat-team --deploy-only`。
 3. 通过受控运行时注入 `INTERNAL_SERVICE_TOKEN`；不得写入 inventory、vars、命令行

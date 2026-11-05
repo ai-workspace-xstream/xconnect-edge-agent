@@ -145,11 +145,11 @@ exit "${{INGEST_EXIT:-0}}"
         self.assertFalse((self.work / 'inventory').exists())
 
     def test_default_playbooks_revision_contains_vault_environment_handoff(self):
-        playbooks_revision = '0f9a2cc012a9440278e45feafe0389e8cc8dff6f'
+        playbooks_revision = '1ae97b6f31e4cd739c7603eaec5966d5ea498fd9'
         helper = (ROOT / 'scripts/setup-observability.sh').read_text()
         installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
-        self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF:-{playbooks_revision}', helper)
-        self.assertIn(f'OBSERVABILITY_PLAYBOOKS_REF={playbooks_revision}', installer)
+        self.assertIn('OBSERVABILITY_PLAYBOOKS_REF', helper)
+        self.assertIn(f'AGENT_PLAYBOOKS_REF:-{playbooks_revision}', installer)
 
     def test_xray_metrics_repair_is_opt_in(self):
         result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true',
@@ -176,15 +176,6 @@ exit "${{INGEST_EXIT:-0}}"
         result = self.run_helper(VECTOR_BILLING_INGEST_ENABLED='true', BILLING_SERVICE_URL='')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('BILLING_SERVICE_URL is required', result.stderr)
-
-    def test_combined_preflight_before_node_mutations(self):
-        result = subprocess.run(['bash', str(ROOT / 'scripts/setup-proxy.sh'),
-                                 '--node', 'edge.example.test', '--with-observability'],
-                                env=dict(self.env, VECTOR_AUTH_PASSWORD=''), capture_output=True, text=True)
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('Combined deployment is missing:', result.stderr)
-        self.assertIn('VECTOR_AUTH_PASSWORD', result.stderr)
-        self.assertFalse((self.work / 'services').exists())
 
 
 if __name__ == '__main__':

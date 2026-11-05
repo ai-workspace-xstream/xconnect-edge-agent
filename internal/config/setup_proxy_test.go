@@ -1,246 +1,39 @@
 package config
 
 import (
-	"bytes"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestSetupProxyBackfillsLegacyDynamicUsers(t *testing.T) {
+func TestSetupProxyDelegatesHostOperationsToPlaybooks(t *testing.T) {
 	script, err := os.ReadFile("../../scripts/setup-proxy.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
-	start := strings.Index(string(script), "ensure_agent_dynamic_users() {")
-	if start < 0 {
-		t.Fatal("missing config migration")
-	}
-	end := strings.Index(string(script[start:]), "\n}\n")
-	if end < 0 {
-		t.Fatal("missing config migration boundary")
-	}
-	function := string(script[start : start+end+3])
-	for _, existing := range []bool{false, true} {
-		t.Run(map[bool]string{false: "legacy", true: "operator-configured"}[existing], func(t *testing.T) {
-			config := `agent:
-  id: sg-node
-  region: SG
-  pool: sg-main
-  entryPoint: sg.entry.example
-  openToUsers: false
-xray:
-  sync:
-    targets:
-      - name: "xhttp"
-        outputPath: /tmp/xhttp.json
-        restartCommand: [systemctl, restart, xray.service]
-`
-			if existing {
-				config += "        dynamicUsers:\n          enabled: false\n          server: custom:1234\n"
-			}
-			config += `      - name: "tcp"
-        outputPath: /tmp/tcp.json
-      - name: "custom"
-        outputPath: /tmp/custom.json
-log:
-  level: debug
-`
-			path := filepath.Join(t.TempDir(), "agent.yaml")
-			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
-				t.Fatal(err)
-			}
-			migrate := func() []byte {
-				t.Helper()
-				cmd := exec.Command("bash", "-c", function+"\nensure_agent_dynamic_users \"$1\"", "test", path)
-				if out, err := cmd.CombinedOutput(); err != nil {
-					t.Fatalf("migration: %v %s", err, out)
-				}
-				out, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				return out
-			}
-			first := migrate()
-			if !bytes.Equal(first, migrate()) {
-				t.Fatal("migration is not idempotent")
-			}
-			cfg, err := LoadReader(bytes.NewReader(first))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.Agent.Region != "SG" || cfg.Agent.Pool != "sg-main" || cfg.Agent.OpenToUsers == nil || *cfg.Agent.OpenToUsers || cfg.Log.Level != "debug" {
-				t.Fatal("operator metadata changed")
-			}
-			xhttp, tcp, custom := cfg.Xray.Sync.Targets[0], cfg.Xray.Sync.Targets[1], cfg.Xray.Sync.Targets[2]
-			if existing {
-				if xhttp.DynamicUsers.Enabled || xhttp.DynamicUsers.Server != "custom:1234" {
-					t.Fatal("explicit dynamic users settings overwritten")
-				}
-			} else if !xhttp.DynamicUsers.Enabled || xhttp.DynamicUsers.Server != "127.0.0.1:10086" {
-				t.Fatalf("xhttp missing migration: %#v", xhttp.DynamicUsers)
-			}
-			if !tcp.DynamicUsers.Enabled || tcp.DynamicUsers.Server != "127.0.0.1:10087" || tcp.DynamicUsers.Executable != "/usr/local/bin/xray" || custom.DynamicUsers.Enabled {
-				t.Fatal("target-specific migration failed")
-			}
-			if len(xhttp.RestartCommand) != 3 {
-				t.Fatal("restart path changed")
-			}
-		})
-	}
-}
-
-func TestSetupProxyBootstrapsVaultTLSBeforeCaddyValidation(t *testing.T) {
-	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(scriptBytes)
-
-	writeConfig := strings.Index(script, "write_caddy_config\n")
-	if writeConfig < 0 {
-		t.Fatal("missing Caddy configuration step")
-	}
-	vaultBootstrap := strings.Index(script[writeConfig:], "configure_vault_agent_tls")
-	if vaultBootstrap < 0 {
-		t.Fatal("missing Vault TLS bootstrap after Caddyfile generation")
-	}
-	vaultBootstrap += writeConfig
-	caddyValidate := strings.Index(script[vaultBootstrap:], "caddy validate --config /etc/caddy/Caddyfile")
-	if caddyValidate < 0 {
-		t.Fatal("missing Caddy validation")
-	}
-	caddyValidate += vaultBootstrap
-	if vaultBootstrap > caddyValidate {
-		t.Fatal("Vault TLS must be bootstrapped before Caddy validation")
-	}
-
-	// The old step-7 call was too late: set -e exits at the step-6 validation.
-	if strings.Count(script, "configure_vault_agent_tls\n") != 1 {
-		t.Fatal("expected exactly one Vault TLS bootstrap call")
-	}
-}
-func TestSetupProxyUsesMaintainedXrayForkWithoutUpstreamFallback(t *testing.T) {
-	scriptBytes, err := os.ReadFile("../../scripts/setup-proxy.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(scriptBytes)
+	content := string(script)
 	for _, required := range []string{
-		`XRAY_REPO="${XRAY_REPO:-ai-workspace-xstream/Xray-core}"`,
-		`XRAY_RELEASE_TAG="${XRAY_RELEASE_TAG:-}"`,
-		"install_xray_from_maintained_fork",
-		`bash "${installer}" install --version "${XRAY_RELEASE_TAG}"`,
-		`bash "${installer}" install`,
+		"deploy|standalone|upgrade|print-arch",
+		"AGENT_PLAYBOOKS_REF",
+		"AGENT_PROXY_OPERATION=\"$operation\"",
+		"ansible-playbook",
+		"AGENT_CONTROLLER_URL",
+		"BILLING_SERVICE_BASE_URL",
 	} {
-		if !strings.Contains(script, required) {
-			t.Fatalf("missing maintained Xray fork contract: %s", required)
+		if !strings.Contains(content, required) {
+			t.Fatalf("missing Playbooks installer contract: %s", required)
 		}
 	}
-	installer, err := os.ReadFile("../../scripts/vendor/xray-install/install-release.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(installer), `RELEASE_LATEST="$PRE_RELEASE_LATEST"`) {
-		t.Fatal("vendored installer must retain prerelease fallback")
-	}
-	if strings.Contains(script, `bash "${installer}" @ install`) {
-		t.Fatal("vendored Xray installer must not receive an unsupported @ argument")
-	}
-	if strings.Contains(script, "XTLS/Xray-install") || strings.Contains(script, "github.com/XTLS/Xray") {
-		t.Fatal("setup script must not fall back to the upstream Xray installer")
-	}
-}
-
-func TestSetupProxyAcceptsRegionalScopeArguments(t *testing.T) {
-	cmd := exec.Command("bash", "../../scripts/setup-proxy.sh",
-		"--print-arch",
-		"--entry-point", "jp-xconnect.onwalk.net",
-		"--region", "jp",
-		"--pool", "jp-main",
-		"--resource-class", "plus",
-	)
-	cmd.Env = append(os.Environ(),
-		"XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1",
-		"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
-		"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
-	)
-	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("regional scope arguments rejected: %v\n%s", err, output)
-	}
-}
-
-func TestSetupProxyRejectsMismatchedTeamScopeArguments(t *testing.T) {
-	cases := [][]string{
-		{"--print-arch", "--resource-class", "free", "--team-id", "team-a"},
-	}
-	for _, args := range cases {
-		cmd := exec.Command("bash", append([]string{"../../scripts/setup-proxy.sh"}, args...)...)
-		cmd.Env = append(os.Environ(),
-			"XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1",
-			"AGENT_ENTRY_POINT=", "AGENT_REGION=", "AGENT_POOL=",
-			"AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=",
-		)
-		if output, err := cmd.CombinedOutput(); err == nil {
-			t.Fatalf("mismatched scope accepted for %v\n%s", args, output)
+	for _, removed := range []string{
+		"install_xray_from_maintained_fork()",
+		"install_prebuilt_runtime_bundle()",
+		"write_caddy_config()",
+		"apply_low_latency_tuning()",
+		"AGENT_BINARY_SHA256",
+		"sha256sum",
+	} {
+		if strings.Contains(content, removed) {
+			t.Fatalf("legacy shell installer implementation remains: %s", removed)
 		}
-	}
-}
-
-func TestSetupProxyVectorBillingMigration(t *testing.T) {
-	script, err := os.ReadFile("../../scripts/setup-proxy.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	start := strings.Index(string(script), "configure_vector_billing() {")
-	if start < 0 {
-		t.Fatal("missing Vector migration")
-	}
-	end := strings.Index(string(script[start:]), "\n}\n")
-	function := string(script[start : start+end+3])
-	for _, block := range []string{"", "billing:\n  enabled: true\n", "billing:\n  baseURL: https://billing.example.com\n", "billing:\n  enabled: false\n  baseURL: https://billing.example.com\n"} {
-		t.Run(block, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "agent.yaml")
-			original := "agent:\n  id: test\nxray:\n  sync:\n    enabled: true\n" + block + "log:\n  level: info\n"
-			if err := os.WriteFile(path, []byte(original), 0600); err != nil {
-				t.Fatal(err)
-			}
-			var previous string
-			for i := 0; i < 2; i++ {
-				cmd := exec.Command("bash", "-c", function+"\nconfigure_vector_billing \"$1\"", "test", path)
-				if out, err := cmd.CombinedOutput(); err != nil {
-					t.Fatalf("%v: %s", err, out)
-				}
-				data, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				cfg, err := LoadReader(bytes.NewReader(data))
-				if err != nil {
-					t.Fatal(err)
-				}
-				if cfg.Billing.Enabled || !cfg.Xray.Sync.Enabled {
-					t.Fatal("migration changed unrelated flags or enabled pull billing")
-				}
-				if !strings.Contains(string(data), "log:\n  level: info") {
-					t.Fatal("lost unrelated configuration")
-				}
-				if i == 1 && previous != string(data) {
-					t.Fatal("migration is not idempotent")
-				}
-				previous = string(data)
-			}
-		})
-	}
-}
-
-func TestSetupProxyAcceptsUnassignedTeamNode(t *testing.T) {
-	cmd := exec.Command("bash", "../../scripts/setup-proxy.sh", "--print-arch", "--resource-class", "team")
-	cmd.Env = append(os.Environ(), "XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1", "AGENT_RESOURCE_CLASS=", "AGENT_TEAM_ID=")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("unassigned team node rejected: %v %s", err, out)
 	}
 }

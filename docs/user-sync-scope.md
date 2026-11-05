@@ -42,7 +42,10 @@ export AGENT_RESOURCE_CLASS="shared" # shared / free / plus / pro / custom / tea
 export AGENT_POOL="jp-main"          # 任意逻辑池名，不决定用户范围
 ```
 
-普通安装会把显式设置的类型写入已有 `/etc/agent/account-agent.yaml`。只在当前 Shell 中 export 再执行 `systemctl restart` 不会让 systemd 服务继承该变量；应通过安装脚本落盘或配置服务环境。`--upgrade-only` 保留未显式覆盖的配置；显式设置的节点属性仍会写入 YAML。Team 切回公共类型时同时清空团队 ID。
+托管部署由 Playbooks Agent Proxy Role 把显式设置的节点范围写入
+`/etc/agent/account-agent.yaml`。只在当前 Shell 中 export 再执行 `systemctl restart`
+不会让 systemd 服务继承该变量。`--operation upgrade` 仅替换 Agent/Xray 二进制并保留
+配置；Team 切回公共类型时同时清空团队 ID。
 
 启动日志展示实际 resourceClass、teamId 和 pool。若控制面响应范围不匹配，错误会显示 expected/received 类型，但不会打印 token；仍拒绝应用该快照，不通过忽略 scope 修复。控制面未更新或缺少公共节点管理权限时，Agent 单独升级无法补全 Shared 用户集合。
 
