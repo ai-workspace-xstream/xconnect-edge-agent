@@ -54,17 +54,20 @@ if ! command -v ansible-playbook >/dev/null; then
   apt-get update && apt-get install -y ansible-core
 fi
 
+export AGENT_ID="${AGENT_ID:-${domain:-$(hostname -f 2>/dev/null || hostname)}}"
+[[ "$AGENT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || die 'AGENT_ID must be a valid hostname-compatible identifier'
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/xconnect-playbooks.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 chmod 0700 "$work"
 curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
   | tar -xz -C "$work" --strip-components=1
-printf '[agent_proxy]\nlocalhost ansible_connection=local\n[xray_exporter]\nlocalhost ansible_connection=local\n[observability_agent]\nlocalhost ansible_connection=local\n' > "$work/inventory.ini"
+printf '[agent_proxy]\n%s ansible_connection=local\n[xray_exporter]\n%s ansible_connection=local\n[observability_agent]\n%s ansible_connection=local\n' \
+  "$AGENT_ID" "$AGENT_ID" "$AGENT_ID" > "$work/inventory.ini"
 chmod 0600 "$work/inventory.ini"
 printf '[defaults]\nretry_files_enabled = False\n' > "$work/ansible.cfg"
 
-export AGENT_ID="${AGENT_ID:-${domain:-$(hostname -f 2>/dev/null || hostname)}}"
 export AGENT_PROXY_DOMAIN="${domain:-$AGENT_ID}" AGENT_ENTRY_POINT="${entry:-${domain:-$AGENT_ID}}"
 export AGENT_REGION="$region" AGENT_POOL="$pool" AGENT_RESOURCE_CLASS="$class" AGENT_TEAM_ID="$team"
 export AGENT_PROXY_OPERATION="$operation" AGENT_PROXY_OPEN_STUNNEL_5443="$stunnel"
@@ -80,4 +83,4 @@ if [[ "$observability" == true || "$observability" == 1 || "$observability" == y
   export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
 fi
 ANSIBLE_CONFIG="$work/ansible.cfg" ansible-playbook "$work/deploy_xray_proxy_server.yml" \
-  -i "$work/inventory.ini" -e 'agent_service_hosts=localhost agent_proxy_local_installer=true'
+  -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true"
