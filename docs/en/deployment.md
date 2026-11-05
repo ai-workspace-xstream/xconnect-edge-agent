@@ -16,8 +16,9 @@ Ansible inventory; neither depends on Doco-CD or consumes the Web SaaS deploymen
 
 Deployment order:
 
-1. Bootstrap the target with `scripts/setup-proxy.sh` so Xray, Caddy, certificates, and the
-   required runtime paths exist.
+1. Use the dedicated Ansible target for this managed Agent Server. Do not bootstrap it with
+   standalone mode. The general single-node installer invokes the Playbooks Role with
+   `scripts/setup-proxy.sh --operation deploy`.
 2. From `deploy/ansible`, run `./deploy.sh --uat-shared --deploy-only` or
    `./deploy.sh --uat-team --deploy-only` for the corresponding VM.
 3. Inject `INTERNAL_SERVICE_TOKEN` through the controlled runtime environment. Never put it
