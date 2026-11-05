@@ -1035,6 +1035,31 @@ if [ "$PRINT_ARCH" = true ]; then
     exit 0
 fi
 
+if [ "$STANDALONE_MODE" = false ] && [ "$UPGRADE_ONLY" = false ]; then
+    AGENT_CUSTOM_EMAILS="$(
+        AGENT_EFFECTIVE_RESOURCE_CLASS="$RESOURCE_CLASS" python3 - <<'PY_EMAILS'
+import json
+import os
+
+raw = os.environ.get("AGENT_CUSTOM_EMAILS", "").strip()
+try:
+    emails = json.loads(raw) if raw.startswith("[") else ([raw] if raw else [])
+except ValueError:
+    raise SystemExit("AGENT_CUSTOM_EMAILS must be a JSON list or an email address")
+if not isinstance(emails, list) or any(
+    not isinstance(email, str) or "@" not in email.strip()
+    or any(char.isspace() for char in email.strip())
+    for email in emails
+):
+    raise SystemExit("AGENT_CUSTOM_EMAILS must contain valid emails")
+if os.environ["AGENT_EFFECTIVE_RESOURCE_CLASS"] == "custom" and not emails:
+    raise SystemExit("A custom node requires a nonempty AGENT_CUSTOM_EMAILS list")
+print(json.dumps([email.strip().lower() for email in emails]))
+PY_EMAILS
+    )"
+    export AGENT_CUSTOM_EMAILS
+fi
+
 # The combined installer can resolve monitoring credentials from the same
 # runtime Vault session used for TLS. Never echo the resulting values.
 # Keep the init.sh interface stable: its established observability path name
@@ -1117,6 +1142,65 @@ if is_truthy "$INSTALL_OBSERVABILITY"; then
         echo "Combined deployment is missing: ${missing_combined_values[*]}. Check Vault access and KV paths." >&2
         exit 1
     fi
+fi
+
+# The managed installer hands deployment to the canonical Playbooks roles.
+# Standalone and binary-only upgrades retain their distinct legacy contracts.
+if [ "$STANDALONE_MODE" = false ] && [ "$UPGRADE_ONLY" = false ]; then
+    : "${AUTH_URL:?Accounts URL is required for managed installation}"
+    : "${INTERNAL_SERVICE_TOKEN:?Runtime service credential is required for managed installation}"
+
+    (
+        work_dir="$(mktemp -d)"
+        trap 'rm -rf "$work_dir"' EXIT
+        playbooks_dir="${AGENT_PLAYBOOK_DIR:-$work_dir/playbooks}"
+        if [ -z "${AGENT_PLAYBOOK_DIR:-}" ]; then
+            playbooks_ref="${AGENT_PLAYBOOKS_REF:-2c341a3f9d7df7a75bc232e072a32c4d66fc3dfd}"
+            if [[ ! "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]]; then
+                echo 'AGENT_PLAYBOOKS_REF must be a full commit SHA.' >&2
+                exit 1
+            fi
+            curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+                "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
+                -o "$work_dir/playbooks.tar.gz"
+            mkdir "$playbooks_dir"
+            tar -xzf "$work_dir/playbooks.tar.gz" -C "$playbooks_dir" --strip-components=1
+        fi
+        if ! command -v ansible-playbook >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y ansible-core
+        fi
+        export AGENT_ID="$DOMAIN" AGENT_PROXY_DOMAIN="$DOMAIN"
+        export AGENT_REGION="$REGION" AGENT_POOL="$POOL"
+        export AGENT_RESOURCE_CLASS="$RESOURCE_CLASS" AGENT_TEAM_ID="$TEAM_ID"
+        export AGENT_ENTRY_POINT="$ENTRY_POINT"
+        export AGENT_CONTROLLER_URL="$AUTH_URL" BILLING_SERVICE_BASE_URL="$BILLING_URL"
+        export AUTH_URL INTERNAL_SERVICE_TOKEN
+        export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/$GITHUB_REPO.git}"
+        if [ "$AGENT_RELEASE_TAG" != latest ]; then
+            export AGENT_RELEASE_TAG
+        fi
+        if [ -n "${VAULT_TLS_SECRET_PATH:-}" ]; then
+            export AGENT_PROXY_VAULT_TLS_ENABLED="${AGENT_PROXY_VAULT_TLS_ENABLED:-true}"
+        fi
+        printf '[defaults]\nretry_files_enabled = False\n' > "$work_dir/ansible.cfg"
+        ANSIBLE_CONFIG="$work_dir/ansible.cfg" ansible-playbook \
+            "$playbooks_dir/deploy_xray_proxy_server.yml" -i localhost, --connection local \
+            -e agent_service_hosts=localhost -e agent_proxy_local_installer=true
+
+        ensure_ufw_ports
+        if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            update_cloudflare_dns_for_domain "$DOMAIN" "$(resolve_public_ipv4)"
+        fi
+        if is_truthy "$INSTALL_OBSERVABILITY"; then
+            export VECTOR_BILLING_INGEST_ENABLED=true
+            export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_URL%/}/v1/ingest/snapshots}"
+            export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
+            repo_source_dir="$(fetch_repo_archive)"
+            bash "$repo_source_dir/scripts/setup-observability.sh"
+        fi
+    )
+    exit $?
 fi
 
 REPO_SOURCE_DIR="$(fetch_repo_archive)"
