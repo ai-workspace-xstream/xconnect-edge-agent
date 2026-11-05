@@ -46,8 +46,8 @@ while (($#)); do
   esac
 done
 
-playbooks_ref="${AGENT_PLAYBOOKS_REF:-855c1c01ea85c216264f94697e822e82ae7f2f2b}"
-[[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
+playbooks_ref="${AGENT_PLAYBOOKS_REF:-main}"
+[[ "$playbooks_ref" =~ ^([a-f0-9]{40}|main)$ ]] || die 'AGENT_PLAYBOOKS_REF must be main or a full commit SHA'
 command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
 if ! command -v ansible-playbook >/dev/null; then
   command -v apt-get >/dev/null || die 'Ansible Core is required and apt-get is unavailable'
