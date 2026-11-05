@@ -1,22 +1,6 @@
 #!/bin/bash
 set -e
 
-# A copy-pasted installer must converge to the repository's current main
-# script before it changes a node. The guard prevents the refreshed copy from
-# downloading and executing itself again.
-if [ "${XCONNECT_SETUP_PROXY_BOOTSTRAPPED:-0}" != 1 ]; then
-    self_update_url="${XCONNECT_SETUP_PROXY_URL:-https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-agent/main/scripts/setup-proxy.sh}"
-    self_update_file="$(mktemp /tmp/xconnect-setup-proxy.XXXXXX.sh)"
-    trap 'rm -f "$self_update_file"' EXIT
-    if ! curl -fsSL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 "$self_update_url" -o "$self_update_file"; then
-        echo "Failed to download the current setup-proxy.sh from $self_update_url" >&2
-        exit 1
-    fi
-    chmod 0700 "$self_update_file"
-    export XCONNECT_SETUP_PROXY_BOOTSTRAPPED=1
-    exec bash "$self_update_file" "$@"
-fi
-
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1153,6 +1137,44 @@ if [ "$STANDALONE_MODE" = false ] && [ "$UPGRADE_ONLY" = false ]; then
     (
         work_dir="$(mktemp -d)"
         trap 'rm -rf "$work_dir"' EXIT
+        goarch="$(detect_goarch)"
+        if [ "$AGENT_RELEASE_TAG" = latest ]; then
+            release_api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+        else
+            if [[ ! "$AGENT_RELEASE_TAG" =~ ^v[A-Za-z0-9._-]+$ ]]; then
+                echo 'AGENT_RELEASE_TAG must be latest or an immutable v-prefixed release tag.' >&2
+                exit 1
+            fi
+            release_api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${AGENT_RELEASE_TAG}"
+        fi
+        curl -fsSL --retry 3 --connect-timeout 15 --max-time 60 \
+            "$release_api_url" -o "$work_dir/agent-release.json"
+        asset_name="xconnect-edge-agent-linux-${goarch}"
+        release_metadata="$(python3 - "$work_dir/agent-release.json" "$AGENT_RELEASE_TAG" "$asset_name" <<'PY_RELEASE'
+import json, re, sys
+with open(sys.argv[1], encoding='utf-8') as source:
+    release = json.load(source)
+tag = release.get('tag_name', '')
+requested = sys.argv[2]
+asset_name = sys.argv[3]
+if not tag or (requested != 'latest' and tag != requested):
+    raise SystemExit('GitHub release tag did not match the requested version.')
+asset = next((item for item in release.get('assets', []) if item.get('name') == asset_name), None)
+digest = asset.get('digest', '') if asset else ''
+url = asset.get('browser_download_url', '') if asset else ''
+if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest) or not url.startswith('https://github.com/'):
+    raise SystemExit('Release is missing the expected binary asset or SHA-256 digest.')
+print('\t'.join((tag, url, digest.removeprefix('sha256:'))))
+PY_RELEASE
+        )"
+        IFS=$'\t' read -r resolved_release_tag agent_binary_url agent_binary_sha256 <<< "$release_metadata"
+        curl --fail --silent --show-error --location --retry 3 --connect-timeout 15 --max-time 300 \
+            --output "$work_dir/agent-binary" "$agent_binary_url"
+        printf '%s  %s\n' "$agent_binary_sha256" "$work_dir/agent-binary" | sha256sum --check --status
+        chmod 0755 "$work_dir/agent-binary"
+        export AGENT_BINARY_SRC="$work_dir/agent-binary"
+        export AGENT_RELEASE_TAG="$resolved_release_tag"
+        echo "Resolved XConnect Edge Agent release: ${resolved_release_tag} (${asset_name})."
         playbooks_dir="${AGENT_PLAYBOOK_DIR:-$work_dir/playbooks}"
         if [ -z "${AGENT_PLAYBOOK_DIR:-}" ]; then
             playbooks_ref="${AGENT_PLAYBOOKS_REF:-2c341a3f9d7df7a75bc232e072a32c4d66fc3dfd}"
