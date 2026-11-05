@@ -46,7 +46,7 @@ while (($#)); do
   esac
 done
 
-playbooks_ref="${AGENT_PLAYBOOKS_REF:-1ae97b6f31e4cd739c7603eaec5966d5ea498fd9}"
+playbooks_ref="${AGENT_PLAYBOOKS_REF:-855c1c01ea85c216264f94697e822e82ae7f2f2b}"
 [[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
 command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
 if ! command -v ansible-playbook >/dev/null; then
