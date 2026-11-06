@@ -29,6 +29,7 @@ type ClientOptions struct {
 	InsecureSkipVerify bool
 	UserAgent          string
 	AgentID            string
+	NodeID             string
 }
 
 // Client issues authenticated requests against the controller.
@@ -41,6 +42,7 @@ type Client struct {
 	http            *http.Client
 	userAgent       string
 	agentID         string
+	nodeID          string
 }
 
 // NewClient constructs a client for the provided controller URL and token.
@@ -106,6 +108,7 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 		http:            client,
 		userAgent:       userAgent,
 		agentID:         strings.TrimSpace(opts.AgentID),
+		nodeID:          firstNonEmpty(opts.NodeID, opts.AgentID),
 	}, nil
 }
 
@@ -149,6 +152,11 @@ func (c *Client) ListClients(ctx context.Context) (agentproto.ClientListResponse
 		_ = resp.Body.Close()
 		if err != nil {
 			return agentproto.ClientListResponse{}, fmt.Errorf("decode client list: %w", err)
+		}
+		// Accounts includes a receipt for node-bound credentials. Keep
+		// accepting snapshots from legacy controllers without that receipt.
+		if payload.NodeID != "" && (payload.NodeID != c.nodeID || payload.AgentID == "" || payload.AgentID != c.agentID) {
+			return agentproto.ClientListResponse{}, errors.New("controller snapshot identity mismatched; refusing Xray synchronization")
 		}
 		if c.scope.EmailPolicy != "" && (payload.Scope == nil || payload.Scope.EmailPolicy != c.scope.EmailPolicy || payload.Scope.EmailDigest != c.scope.EmailDigest) {
 			return agentproto.ClientListResponse{}, errors.New("controller public email union policy receipt missing or mismatched; upgrade Accounts or reconcile node email configuration; refusing Xray synchronization")
