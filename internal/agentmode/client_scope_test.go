@@ -41,7 +41,8 @@ func TestScopedSnapshotAdmission(t *testing.T) {
 				t.Fatal(err)
 			}
 			tracker := newSyncTracker()
-			tracker.UpdateFetch(3, "previous", tracker.Snapshot().LastFetch)
+			tracker.UpdateFetch(3, "previous", time.Now())
+			tracker.MarkSuccess(time.Now())
 			snapshot, err := NewHTTPClientSource(client, tracker).FetchSnapshot(context.Background())
 			if (err == nil) != tc.allowed {
 				t.Fatalf("admission = %v, allowed = %v", err, tc.allowed)
@@ -113,5 +114,34 @@ func TestManagedTeamEventPollingClosesWithoutWarningError(t *testing.T) {
 	}
 	if seen != "pending-revision" {
 		t.Fatal("missing enrollment event")
+	}
+}
+
+func TestBoundSnapshotAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name, agentID, nodeID string
+		allowed               bool
+	}{
+		{"matching binding", "proxy-agent", "proxy-node", true},
+		{"legacy controller", "", "", true},
+		{"wrong agent", "other-agent", "proxy-node", false},
+		{"wrong node", "proxy-agent", "other-node", false},
+		{"missing agent", "", "proxy-node", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				fmt.Fprintf(w, `{"agentId":%q,"nodeId":%q,"scope":{"resourceClass":"custom"},"clients":[]}`, tc.agentID, tc.nodeID)
+			}))
+			defer server.Close()
+			client, err := NewClient(server.URL, "fixture-token", ClientOptions{
+				AgentID: "proxy-agent", NodeID: "proxy-node", ResourceClass: "custom",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.ListClients(context.Background()); (err == nil) != tc.allowed {
+				t.Fatalf("allowed=%t, error=%v", tc.allowed, err)
+			}
+		})
 	}
 }

@@ -17,6 +17,8 @@ type UserScope struct {
 
 // ClientListResponse is the controller snapshot admitted before Xray synchronization.
 type ClientListResponse struct {
+	AgentID          string              `json:"agentId,omitempty"`
+	NodeID           string              `json:"nodeId,omitempty"`
 	EnrollmentStatus string              `json:"enrollmentStatus,omitempty"`
 	Scope            *UserScope          `json:"scope,omitempty"`
 	Clients          []xrayconfig.Client `json:"clients"`

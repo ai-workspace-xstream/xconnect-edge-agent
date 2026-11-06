@@ -104,6 +104,7 @@ func Run(ctx context.Context, opts Options) error {
 		InsecureSkipVerify: opts.Agent.TLS.InsecureSkipVerify,
 		UserAgent:          buildUserAgent(opts.Agent.ID),
 		AgentID:            opts.Agent.ID,
+		NodeID:             opts.Agent.NodeID,
 		AllowedEmails:      opts.Agent.AllowedEmails,
 		CustomAllowFree:    opts.Agent.CustomAllowFree,
 		ResourceClass:      opts.Agent.ResourceClass,

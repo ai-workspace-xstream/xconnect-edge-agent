@@ -6,14 +6,16 @@ import (
 )
 
 type syncTracker struct {
-	mu          sync.RWMutex
-	clients     int
-	revision    string
-	lastFetch   time.Time
-	lastSuccess time.Time
-	lastError   string
-	lastErrorAt time.Time
-	changes     chan struct{}
+	mu              sync.RWMutex
+	clients         int
+	revision        string
+	fetchedClients  int
+	fetchedRevision string
+	lastFetch       time.Time
+	lastSuccess     time.Time
+	lastError       string
+	lastErrorAt     time.Time
+	changes         chan struct{}
 }
 
 func newSyncTracker() *syncTracker {
@@ -24,8 +26,8 @@ func (t *syncTracker) UpdateFetch(count int, revision string, when time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.clients = count
-	t.revision = revision
+	t.fetchedClients = count
+	t.fetchedRevision = revision
 	t.lastFetch = when
 }
 
@@ -33,6 +35,8 @@ func (t *syncTracker) MarkSuccess(at time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
+	t.clients = t.fetchedClients
+	t.revision = t.fetchedRevision
 	t.lastSuccess = at
 	t.lastError = ""
 	t.lastErrorAt = time.Time{}
