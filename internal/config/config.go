@@ -21,6 +21,13 @@ type Config struct {
 	Agent   Agent   `yaml:"agent"`
 	Xray    Xray    `yaml:"xray"`
 	Billing Billing `yaml:"billing"`
+
+	// Flat top-level bootstrap fields for minimal 5-field config:
+	ID            string `yaml:"id"`
+	NodeID        string `yaml:"nodeId"`
+	ControllerURL string `yaml:"controllerUrl"`
+	APIToken      string `yaml:"apiToken"`
+	ResourceClass string `yaml:"resourceClass"`
 }
 
 type Log struct {
@@ -178,6 +185,28 @@ func LoadReader(r io.Reader) (*Config, error) {
 	var cfg Config
 	if err := yaml.NewDecoder(r).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
+	}
+
+	if cfg.Mode == "" {
+		cfg.Mode = "agent"
+	}
+	if cfg.Agent.ID == "" && cfg.ID != "" {
+		cfg.Agent.ID = strings.TrimSpace(cfg.ID)
+	}
+	if cfg.Agent.NodeID == "" && cfg.NodeID != "" {
+		cfg.Agent.NodeID = strings.TrimSpace(cfg.NodeID)
+	}
+	if cfg.Agent.ControllerURL == "" && cfg.ControllerURL != "" {
+		cfg.Agent.ControllerURL = strings.TrimSpace(cfg.ControllerURL)
+	}
+	if cfg.Agent.APIToken == "" && cfg.APIToken != "" {
+		cfg.Agent.APIToken = strings.TrimSpace(cfg.APIToken)
+	}
+	if cfg.Agent.ResourceClass == "" && cfg.ResourceClass != "" {
+		cfg.Agent.ResourceClass = strings.TrimSpace(cfg.ResourceClass)
+	}
+	if cfg.Agent.NodeID == "" && cfg.Agent.ID != "" {
+		cfg.Agent.NodeID = cfg.Agent.ID
 	}
 
 	if authURL := os.Getenv("AuthUrl"); authURL != "" {

@@ -51,7 +51,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.Mode != "agent" {
+	if cfg.Mode != "" && cfg.Mode != "agent" {
 		logger.Error("invalid run mode", "expected", "agent", "got", cfg.Mode)
 		os.Exit(1)
 	}

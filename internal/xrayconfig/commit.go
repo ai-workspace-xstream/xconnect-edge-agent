@@ -2,6 +2,7 @@ package xrayconfig
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -167,6 +168,37 @@ func writeAppliedMarker(outputPath, hash string) error {
 
 func removeAppliedMarker(outputPath string) error {
 	if err := os.Remove(appliedMarkerPath(outputPath)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}
+
+func expiryStatePath(outputPath string) string {
+	return filepath.Join(filepath.Dir(outputPath), "."+filepath.Base(outputPath)+".expiry.json")
+}
+
+func readExpiryState(outputPath string) []Client {
+	data, err := os.ReadFile(expiryStatePath(outputPath))
+	if err != nil {
+		return nil
+	}
+	var clients []Client
+	if err := json.Unmarshal(data, &clients); err != nil {
+		return nil
+	}
+	return clients
+}
+
+func writeExpiryState(outputPath string, clients []Client) error {
+	data, err := json.Marshal(clients)
+	if err != nil {
+		return err
+	}
+	return atomicWriteFile(expiryStatePath(outputPath), data, 0o600)
+}
+
+func removeExpiryState(outputPath string) error {
+	if err := os.Remove(expiryStatePath(outputPath)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
