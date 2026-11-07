@@ -113,9 +113,10 @@ type PeriodicSyncer struct {
 
 	syncMu sync.Mutex
 	// groups holds the targets that share a restart command, in config order.
-	groups         [][]*targetState
-	targets        []*targetState
-	remoteRejected string
+	groups           [][]*targetState
+	targets          []*targetState
+	lastRemoteTuning *ServerTuning
+	remoteRejected   string
 }
 
 // targetState is a target with what was last applied to it. It is only
@@ -201,6 +202,9 @@ func NewPeriodicSyncer(opts PeriodicOptions) (*PeriodicSyncer, error) {
 		}
 		state.ValidateCommand = append([]string(nil), target.ValidateCommand...)
 		state.RestartCommand = append([]string(nil), target.RestartCommand...)
+		if saved := readExpiryState(outputPath); len(saved) > 0 {
+			state.lastClients = saved
+		}
 		s.targets = append(s.targets, state)
 		// Targets without a restart command never share one.
 		key := fmt.Sprintf("target:%d", i)
@@ -277,6 +281,31 @@ func (s *PeriodicSyncer) Start(ctx context.Context) (func(context.Context) error
 }
 
 func (s *PeriodicSyncer) run(ctx context.Context) {
+	var expiryTimer *time.Timer
+	var expiryChan <-chan time.Time
+
+	resetExpiryTimer := func() {
+		if expiryTimer != nil {
+			expiryTimer.Stop()
+			expiryTimer = nil
+		}
+		if next, ok := s.nextExpiry(time.Now().UTC()); ok {
+			dur := time.Until(next)
+			if dur < 0 {
+				dur = 0
+			}
+			expiryTimer = time.NewTimer(dur)
+			expiryChan = expiryTimer.C
+		} else {
+			expiryChan = nil
+		}
+	}
+	defer func() {
+		if expiryTimer != nil {
+			expiryTimer.Stop()
+		}
+	}()
+
 	if n, err := s.sync(ctx); err != nil {
 		s.notify(SyncResult{Clients: n, Error: err, CompletedAt: time.Now().UTC()})
 		if ctx.Err() != nil {
@@ -287,6 +316,7 @@ func (s *PeriodicSyncer) run(ctx context.Context) {
 		s.logger.Info("xray config synchronized", "clients", n)
 		s.notify(SyncResult{Clients: n, CompletedAt: time.Now().UTC()})
 	}
+	resetExpiryTimer()
 
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
@@ -296,11 +326,14 @@ func (s *PeriodicSyncer) run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		case <-expiryChan:
+			s.logger.Info("xray config sync triggered by client expiry timer")
 		case <-s.trigger:
 			s.logger.Info("xray config sync triggered by controller event")
 		}
 		{
 			n, err := s.sync(ctx)
+			resetExpiryTimer()
 			if err != nil {
 				s.notify(SyncResult{Clients: n, Error: err, CompletedAt: time.Now().UTC()})
 				// A controller request or command may have its own deadline.
@@ -352,10 +385,20 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (count int, syncErr error) {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "controller snapshot failed")
+		now := time.Now().UTC()
+		if s.canSweepDisconnected(now) {
+			if swept, sweepErr := s.sweepDisconnected(ctx, now); sweepErr != nil {
+				s.logger.Warn("disconnected expiry sweep failed", "err", sweepErr)
+			} else if swept > 0 {
+				s.logger.Info("disconnected expiry sweep removed expired clients", "swept", swept)
+			}
+		}
 		return 0, fmt.Errorf("list clients: %w", err)
 	}
-	span.SetAttributes(attribute.Int("xconnect.sync.client_count", len(snapshot.Clients)))
-	clients := snapshot.Clients
+	s.lastRemoteTuning = snapshot.Tuning
+	now := time.Now().UTC()
+	clients := filterActiveClients(snapshot.Clients, now)
+	span.SetAttributes(attribute.Int("xconnect.sync.client_count", len(clients)))
 	tuning := s.effectiveTuning(snapshot.Tuning)
 
 	var errs []error
@@ -480,6 +523,7 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 	// File-only targets can still skip unchanged writes without load proof.
 	if t.lastHash != "" && c.hash == t.lastHash && (t.loaded || len(t.RestartCommand) == 0) {
 		t.logger.Info("xray config unchanged, skipping write and restart", "clients", len(clients), "hash", c.hash[:12])
+		t.updateExpiryMetadata(clients)
 		return nil, nil
 	}
 	previous, err := readFileSnapshot(generator.OutputPath)
@@ -632,6 +676,16 @@ func (t *targetState) markApplied(c *change, clients []Client, loaded bool) {
 	} else {
 		t.setLoaded("")
 	}
+	if err := writeExpiryState(t.Generator.OutputPath, clients); err != nil {
+		t.logger.Warn("record applied xray client expiry state", "err", err)
+	}
+}
+
+func (t *targetState) updateExpiryMetadata(clients []Client) {
+	t.lastClients = append([]Client(nil), clients...)
+	if err := writeExpiryState(t.Generator.OutputPath, clients); err != nil {
+		t.logger.Warn("record applied xray client expiry state", "err", err)
+	}
 }
 
 // setLoaded records the hash of the config Xray is known to run, or clears
@@ -728,4 +782,78 @@ func defaultCommandRunner(ctx context.Context, cmd []string) ([]byte, error) {
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
+}
+
+// filterActiveClients returns clients whose expiry is either absent or strictly after now.
+func filterActiveClients(clients []Client, now time.Time) []Client {
+	if len(clients) == 0 {
+		return nil
+	}
+	active := make([]Client, 0, len(clients))
+	for _, c := range clients {
+		if c.ExpiresAt == nil || c.ExpiresAt.IsZero() || c.ExpiresAt.After(now) {
+			active = append(active, c)
+		}
+	}
+	return active
+}
+
+// nextExpiry returns the earliest expiration time in the future among all targets' active clients.
+func (s *PeriodicSyncer) nextExpiry(now time.Time) (time.Time, bool) {
+	var earliest time.Time
+	found := false
+	for _, target := range s.targets {
+		for _, c := range target.lastClients {
+			if c.ExpiresAt != nil && !c.ExpiresAt.IsZero() && c.ExpiresAt.After(now) {
+				if !found || c.ExpiresAt.Before(earliest) {
+					earliest = *c.ExpiresAt
+					found = true
+				}
+			}
+		}
+	}
+	return earliest, found
+}
+
+// canSweepDisconnected returns true if any target has clients that have expired according to now.
+func (s *PeriodicSyncer) canSweepDisconnected(now time.Time) bool {
+	for _, target := range s.targets {
+		for _, c := range target.lastClients {
+			if c.ExpiresAt != nil && !c.ExpiresAt.IsZero() && !c.ExpiresAt.After(now) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// sweepDisconnected reconciles configurations when disconnected from the controller,
+// purging clients that have expired according to the local clock.
+func (s *PeriodicSyncer) sweepDisconnected(ctx context.Context, now time.Time) (int, error) {
+	totalSwept := 0
+	var errs []error
+	tuning := s.effectiveTuning(s.lastRemoteTuning)
+
+	for _, group := range s.groups {
+		if len(group) == 0 {
+			continue
+		}
+		groupSwept := 0
+		for _, target := range group {
+			active := filterActiveClients(target.lastClients, now)
+			if len(active) < len(target.lastClients) {
+				groupSwept += len(target.lastClients) - len(active)
+			}
+		}
+		if groupSwept == 0 {
+			continue
+		}
+		activeClients := filterActiveClients(group[0].lastClients, now)
+		if err := s.syncGroup(ctx, group, activeClients, tuning); err != nil {
+			errs = append(errs, err)
+		} else {
+			totalSwept += groupSwept
+		}
+	}
+	return totalSwept, errors.Join(errs...)
 }
