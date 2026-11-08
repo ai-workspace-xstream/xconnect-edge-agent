@@ -26,6 +26,21 @@ Backend 保存，敏感值由 Vault KV 管理。Portal 的 /panel/agent 调用 A
 当前分支仅实现第 2 步的本地快照启动加载。Accounts 下发、原子写入、
 运行时应用及 Portal 管理仍待实现。
 
+## 配置模板与白名单边界
+
+- 非敏感配置按模板复用：`free-shared` 同时适用于 Free 与 Shared；`plus`、
+  `pro`、`custom` 各自独立。单节点只允许对明确列出的非敏感字段做覆盖。
+- 模板与节点覆盖不能改变 `resourceClass`、绑定身份、API 凭据、TLS 校验、
+  静态 `agent.syncInterval`、Xray 本机路径/目标/命令，也不能携带用户白名单。
+- Free 临时白名单仍在 `/panel/agent` 页面按节点操作，使用现有 Grants API；
+  保留有效期、审计、提前撤销和到期自动回收，不把白名单并入模板配置。
+- 管理员/运营修改模板或节点覆盖应生成 GitOps PR；PR 合并前不生效。模板
+  变更影响同类别多个节点，页面需显示作用范围、差异和目标节点数，并记录
+  期望修订与 Agent 已应用修订。GitOps 为公开仓库时不得提交内部节点主机名
+  或私有路由；节点级配置需先确定受控存储位置。
+- 目前 Agent 只支持加载本机预置快照；Accounts 拉取、Portal 配置页面、
+  GitOps PR publisher、应用回执和节点灰度仍未实现，禁止据此宣称已托管。
+
 ## 渐进发布与历史兼容
 
 | 阶段 | 配置和验证 |

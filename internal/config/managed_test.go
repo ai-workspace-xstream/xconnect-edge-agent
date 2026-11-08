@@ -17,7 +17,6 @@ agent:
   apiToken: local-secret
   tls:
     insecureSkipVerify: false
-  resourceClass: free
 xray:
   sync:
     enabled: true
@@ -38,7 +37,6 @@ xray:
 	}
 	if err := os.WriteFile(filepath.Join(overlayDir, "managed.yaml"), []byte(`agent:
   region: tokyo
-  resourceClass: free
 xray:
   sync:
     interval: 5m
@@ -53,7 +51,7 @@ xray:
 	if cfg.Agent.ID != "jp-node" || cfg.Agent.ControllerURL != "https://accounts.example.test" || cfg.Agent.APIToken != "local-secret" || cfg.Agent.TLS.InsecureSkipVerify {
 		t.Fatalf("managed snapshot changed bootstrap fields: %+v", cfg.Agent)
 	}
-	if cfg.Agent.Region != "tokyo" || cfg.Agent.ResourceClass != "free" || cfg.Xray.Sync.Interval.String() != "5m0s" {
+	if cfg.Agent.Region != "tokyo" || cfg.Xray.Sync.Interval.String() != "5m0s" {
 		t.Fatalf("managed fields not applied: %+v", cfg)
 	}
 	if len(cfg.Xray.Sync.Targets) != 2 || cfg.Xray.Sync.Targets[0].OutputPath != "/etc/xray/xhttp.json" || cfg.Xray.Sync.Targets[1].OutputPath != "/etc/xray/tcp.json" {
@@ -65,6 +63,7 @@ func TestLoadManagedRejectsUnsafeOrUnsupportedSnapshotFields(t *testing.T) {
 	tests := map[string]string{
 		"bootstrap token": `agent: {apiToken: attacker-token}`,
 		"tls":             `agent: {tls: {insecureSkipVerify: true}}`,
+		"scope":           `agent: {resourceClass: plus, allowedEmails: [all@example.test]}`,
 		"command":         "xray: {sync: {targets: [{name: xhttp, restartCommand: [sh, -c, id]}]}}",
 		"path":            "xray: {sync: {outputPath: /tmp/evil}}",
 		"mode":            "mode: gateway",
@@ -126,10 +125,7 @@ func TestLoadManagedCompatibilityMatrixForPublicResourceClasses(t *testing.T) {
 			if err := os.Mkdir(overlayDir, 0o700); err != nil {
 				t.Fatal(err)
 			}
-			snapshot := "agent:\n  resourceClass: " + class + "\n"
-			if class == "custom" {
-				snapshot += "  allowedEmails: [trial@example.test]\n"
-			}
+			snapshot := "agent:\n  region: test-region\n"
 			if err := os.WriteFile(filepath.Join(overlayDir, "managed.yaml"), []byte(snapshot), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -139,6 +135,9 @@ func TestLoadManagedCompatibilityMatrixForPublicResourceClasses(t *testing.T) {
 			}
 			if cfg.Agent.ResourceClass != class || cfg.Agent.NodeID != "node-"+class {
 				t.Fatalf("loaded config class/node mismatch: class=%q node=%q", cfg.Agent.ResourceClass, cfg.Agent.NodeID)
+			}
+			if cfg.Agent.Region != "test-region" {
+				t.Fatalf("managed region = %q, want test-region", cfg.Agent.Region)
 			}
 		})
 	}

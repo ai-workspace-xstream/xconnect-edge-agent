@@ -15,11 +15,10 @@ import (
 var managedFields = map[string]any{
 	"log": map[string]any{"level": nil},
 	"agent": map[string]any{
-		"resourceClass": nil, "teamId": nil, "allowedEmails": nil,
 		"region": nil, "pool": nil, "entryPoint": nil, "openToUsers": nil,
 		"provider": nil, "product": nil, "lineCode": nil, "pricingGroup": nil,
 		"statsEnabled": nil, "domain": nil, "httpTimeout": nil,
-		"statusInterval": nil, "syncInterval": nil,
+		"statusInterval": nil,
 	},
 	"xray": map[string]any{"sync": map[string]any{
 		"enabled": nil, "interval": nil, "tuning": map[string]any{
