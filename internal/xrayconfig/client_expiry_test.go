@@ -223,7 +223,7 @@ func TestStartupRestoresClientExpiryState(t *testing.T) {
 func TestGrantRenewalUpdatesExpiryMetadataWithoutRestart(t *testing.T) {
 	dir := t.TempDir()
 	outputPath := filepath.Join(dir, "xray-config.json")
-	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	expiry1 := now.Add(1 * time.Hour)
 	expiry2 := now.Add(5 * 24 * time.Hour) // renewed for 5 days
 
