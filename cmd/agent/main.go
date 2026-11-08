@@ -23,6 +23,7 @@ var (
 
 func main() {
 	configPath := flag.String("config", "account-agent.yaml", "path to configuration file")
+	managedConfig := flag.Bool("managed-config", false, "load the provisioned configuration snapshot alongside the bootstrap file")
 	showVersion := flag.Bool("v", false, "print version information and exit")
 	flag.Parse()
 
@@ -45,7 +46,11 @@ func main() {
 		}()
 	}
 
-	cfg, err := config.Load(*configPath)
+	loadConfig := config.Load
+	if *managedConfig {
+		loadConfig = config.LoadManaged
+	}
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		logger.Error("failed to load configuration", "path", *configPath, "err", err)
 		os.Exit(1)
