@@ -58,12 +58,15 @@ func TestStatusReporterPublishesSyncChangesBeforeHeartbeat(t *testing.T) {
 	if report := next(); !report.Healthy || !report.Xray.Running || report.Users != 19 || report.SyncRevision != "free-revision" {
 		t.Fatalf("sync success not reported: %#v", report)
 	}
+	tracker.UpdateFetch(20, "next-revision", time.Now())
 	tracker.MarkError(errors.New("sync failed"), time.Now())
-	if report := next(); report.Healthy || report.Message != "sync failed" {
+	if report := next(); report.Healthy || report.Message != "sync failed" ||
+		report.SyncRevision != "free-revision" || report.Xray.XrayRevision != "free-revision" || report.Users != 19 {
 		t.Fatalf("sync failure not reported: %#v", report)
 	}
 	tracker.MarkSuccess(time.Now())
-	if report := next(); !report.Healthy || report.Message != "" {
+	if report := next(); !report.Healthy || report.Message != "" ||
+		report.SyncRevision != "next-revision" || report.Xray.XrayRevision != "next-revision" || report.Users != 20 {
 		t.Fatalf("sync recovery not reported: %#v", report)
 	}
 	cancel()

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/mail"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +22,13 @@ type Config struct {
 	Agent   Agent   `yaml:"agent"`
 	Xray    Xray    `yaml:"xray"`
 	Billing Billing `yaml:"billing"`
+
+	// Flat top-level bootstrap fields for minimal 5-field config:
+	ID            string `yaml:"id"`
+	NodeID        string `yaml:"nodeId"`
+	ControllerURL string `yaml:"controllerUrl"`
+	APIToken      string `yaml:"apiToken"`
+	ResourceClass string `yaml:"resourceClass"`
 }
 
 type Log struct {
@@ -165,19 +173,65 @@ type DynamicUserSync struct {
 }
 
 func Load(path string) (*Config, error) {
+	return load(path, false)
+}
+
+// LoadManaged loads the bootstrap configuration and its provisioned snapshot.
+func LoadManaged(path string) (*Config, error) {
+	return load(path, true)
+}
+
+func load(path string, managed bool) (*Config, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config file: %w", err)
 	}
 	defer f.Close()
 
-	return LoadReader(f)
+	if !managed {
+		return LoadReader(f)
+	}
+	var cfg Config
+	if err := yaml.NewDecoder(f).Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("decode config: %w", err)
+	}
+	overlayPath := filepath.Join(strings.TrimSuffix(path, filepath.Ext(path))+".d", "managed.yaml")
+	if err := loadManagedOverlay(overlayPath, &cfg); err != nil {
+		return nil, err
+	}
+	return finalizeConfig(cfg)
 }
 
 func LoadReader(r io.Reader) (*Config, error) {
 	var cfg Config
 	if err := yaml.NewDecoder(r).Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("decode config: %w", err)
+	}
+
+	return finalizeConfig(cfg)
+}
+
+func finalizeConfig(cfg Config) (*Config, error) {
+	if cfg.Mode == "" {
+		cfg.Mode = "agent"
+	}
+	if cfg.Agent.ID == "" && cfg.ID != "" {
+		cfg.Agent.ID = strings.TrimSpace(cfg.ID)
+	}
+	if cfg.Agent.NodeID == "" && cfg.NodeID != "" {
+		cfg.Agent.NodeID = strings.TrimSpace(cfg.NodeID)
+	}
+	if cfg.Agent.ControllerURL == "" && cfg.ControllerURL != "" {
+		cfg.Agent.ControllerURL = strings.TrimSpace(cfg.ControllerURL)
+	}
+	if cfg.Agent.APIToken == "" && cfg.APIToken != "" {
+		cfg.Agent.APIToken = strings.TrimSpace(cfg.APIToken)
+	}
+	if cfg.Agent.ResourceClass == "" && cfg.ResourceClass != "" {
+		cfg.Agent.ResourceClass = strings.TrimSpace(cfg.ResourceClass)
+	}
+	if cfg.Agent.NodeID == "" && cfg.Agent.ID != "" {
+		cfg.Agent.NodeID = cfg.Agent.ID
 	}
 
 	if authURL := os.Getenv("AuthUrl"); authURL != "" {

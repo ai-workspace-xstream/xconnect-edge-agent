@@ -396,6 +396,10 @@ curl -fsSL https://raw.githubusercontent.com/ai-workspace-xstream/xconnect-edge-
 `print-arch` 也由 Playbooks Role 执行，仅报告架构，不安装软件。DNS 记录由
 IaC 管理，不由安装入口直接修改。
 
+本地安装生成的临时 Ansible inventory 使用传入的 Agent ID 作为目标主机名，
+确保 common role 设置的静态 OS hostname 与 Agent ID 域名一致；`init.sh` 无需单独
+传递或维护第二个 hostname。
+
 ---
 
 ## ☁️ 边缘与容器化部署（Cloudflare / Cloud Run）
