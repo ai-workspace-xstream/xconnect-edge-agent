@@ -46,8 +46,10 @@ while (($#)); do
   esac
 done
 
-playbooks_ref="${AGENT_PLAYBOOKS_REF:-main}"
-[[ "$playbooks_ref" =~ ^([a-f0-9]{40}|main)$ ]] || die 'AGENT_PLAYBOOKS_REF must be main or a full commit SHA'
+playbooks_ref="${AGENT_PLAYBOOKS_REF:-}"
+gitops_ref="${AGENT_GITOPS_REF:-}"
+[[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
+[[ "$gitops_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_GITOPS_REF must be a full commit SHA'
 command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
 if ! command -v ansible-playbook >/dev/null; then
   command -v apt-get >/dev/null || die 'Ansible Core is required and apt-get is unavailable'
@@ -60,9 +62,6 @@ export AGENT_ID="${AGENT_ID:-${domain:-$(hostname -f 2>/dev/null || hostname)}}"
 work="$(mktemp -d "${TMPDIR:-/tmp}/xconnect-playbooks.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 chmod 0700 "$work"
-curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
-  "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
-  | tar -xz -C "$work" --strip-components=1
 printf '[agent_proxy]\n%s ansible_connection=local\n[xray_exporter]\n%s ansible_connection=local\n[observability_agent]\n%s ansible_connection=local\n' \
   "$AGENT_ID" "$AGENT_ID" "$AGENT_ID" > "$work/inventory.ini"
 chmod 0600 "$work/inventory.ini"
@@ -75,6 +74,7 @@ export AGENT_PROXY_OBSERVABILITY_ENABLED="$observability"
 export AGENT_CONTROLLER_URL="${AGENT_CONTROLLER_URL:-${AUTH_URL:-${ACCOUNTS_URL:-}}}"
 export BILLING_SERVICE_BASE_URL="${BILLING_SERVICE_BASE_URL:-${BILLING_SERVICE_URL:-}}"
 export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}.git}"
+export XCONNECT_GITOPS_CONFIG="$gitops_config"
 [[ -z "${VAULT_TLS_SECRET_PATH:-}" ]] || export AGENT_PROXY_VAULT_TLS_ENABLED=true
 
 if [[ "$observability" == true || "$observability" == 1 || "$observability" == yes ]]; then
@@ -82,5 +82,14 @@ if [[ "$observability" == true || "$observability" == 1 || "$observability" == y
   export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_SERVICE_BASE_URL%/}/v1/ingest/snapshots}"
   export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
 fi
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+  "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
+  | tar -xz -C "$work" --strip-components=1
+gitops_config="$work/xconnect-regional-pools.yaml"
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+  "https://raw.githubusercontent.com/ai-workspace-infra/gitops/${gitops_ref}/topology/prod/selfhost/xconnect-regional-pools.yaml" \
+  -o "$gitops_config"
+[[ -s "$gitops_config" ]] || die 'GitOps regional pools configuration is empty'
+printf 'Using Playbooks commit %s and GitOps commit %s\n' "$playbooks_ref" "$gitops_ref"
 ANSIBLE_CONFIG="$work/ansible.cfg" ansible-playbook "$work/deploy_xray_proxy_server.yml" \
   -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true"
