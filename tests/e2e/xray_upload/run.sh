@@ -181,10 +181,6 @@ xray:
         templatePath: $WORK/templates/xray.xhttp.template.json
         validateCommand: ["$XRAY", "run", "-test", "-config", "{config}"]
         restartCommand: ["$HERE/restart_xray.sh", "$WORK", "$XRAY", "$PORT_XHTTP"]
-        dynamicUsers:
-          enabled: true
-          executable: $XRAY
-          server: 127.0.0.1:10086
 YAML
 
 python3 - "$WORK/images" "$IMAGES" <<'PY'
@@ -210,15 +206,16 @@ check "applied marker records the loaded config" wait_for 10 marker_matches
 upload_images "stream-up uploads" "$U1" stream-up
 upload_images "packet-up uploads" "$U1" packet-up
 
-log "-- 2. client added: HandlerService, no restart"
+log "-- 2. client added: validate, commit, restart"
 pid=$(xray_pid)
 set_state r2 null "$U1" "$U2"
 check "new client written" wait_for 15 config_has "$U2"
-check "marker follows the hot addition" wait_for 10 marker_matches
-check "xray not restarted for an addition" xray_still "$pid"
+check "xray restarted for client addition" wait_for 15 xray_restarted_since "$pid"
+check "marker records restarted config" wait_for 10 marker_matches
 upload_images "added client uploads" "$U2" packet-up
 
 log "-- 3. tuning change: validate, commit, restart"
+pid=$(xray_pid)
 set_state r3 '{"xhttpScMaxEachPostBytes": 2000000, "connIdleSeconds": 300}' "$U1" "$U2"
 check "tuning written" wait_for 15 config_has '"scMaxEachPostBytes": 2000000'
 check "xray restarted for tuning" wait_for 15 xray_restarted_since "$pid"

@@ -147,8 +147,7 @@ func syncDir(dir string) {
 }
 
 // appliedMarkerPath records the hash of the config Xray is known to run: it was
-// written only after Xray restarted with that file, or after HandlerService
-// applied a change on top of such a config. An agent restart then does not
+// written only after Xray restarted with that file. An agent restart then does not
 // restart Xray for a config it already runs.
 func appliedMarkerPath(outputPath string) string {
 	return filepath.Join(filepath.Dir(outputPath), "."+filepath.Base(outputPath)+".applied")

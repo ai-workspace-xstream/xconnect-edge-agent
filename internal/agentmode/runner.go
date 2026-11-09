@@ -176,26 +176,11 @@ func Run(ctx context.Context, opts Options) error {
 				generator.Definition = xrayconfig.JSONDefinition{Raw: append([]byte(nil), payload...)}
 			}
 
-			var userAdder xrayconfig.UserAdder
-			var userRevoker xrayconfig.UserRevoker
-			if target.DynamicUsers.Enabled {
-				adder, err := xrayconfig.NewCLIUserAdder(target.DynamicUsers.Executable, target.DynamicUsers.Server)
-				if err != nil {
-					return fmt.Errorf("configure dynamic users for target %s: %w", target.Name, err)
-				}
-				userAdder = adder
-				if target.DynamicUsers.TerminateSessions {
-					userRevoker = adder
-				}
-			}
-
 			syncTargets = append(syncTargets, xrayconfig.Target{
 				Name:            target.Name,
 				Generator:       generator,
 				ValidateCommand: target.ValidateCommand,
 				RestartCommand:  target.RestartCommand,
-				UserAdder:       userAdder,
-				UserRevoker:     userRevoker,
 			})
 		}
 

@@ -35,19 +35,6 @@ type TuningSource interface {
 
 type commandRunner func(ctx context.Context, cmd []string) ([]byte, error)
 
-// UserAdder adds clients to a running Xray instance without restarting it.
-// It is deliberately addition-only: removing a user from Xray's validator does
-// not terminate that user's established sessions.
-type UserAdder interface {
-	AddUsers(ctx context.Context, generator Generator, clients []Client) error
-}
-
-// UserRevoker requires an explicit extension RPC that closes existing sessions.
-// Stock authentication-only RemoveUser is never accepted as this capability.
-type UserRevoker interface {
-	RevokeUsers(context.Context, Generator, []Client) error
-}
-
 // Snapshot is the desired state from one controller response: the clients,
 // the controller tuning and the revision, fetched together.
 type Snapshot struct {
@@ -74,8 +61,6 @@ type Target struct {
 	// RestartCommand reloads Xray. Targets with the same command share one
 	// service: their changes are committed together and restart it once.
 	RestartCommand []string
-	UserAdder      UserAdder
-	UserRevoker    UserRevoker
 }
 
 // PeriodicOptions configures a PeriodicSyncer instance.
@@ -84,15 +69,13 @@ type PeriodicOptions struct {
 	Interval time.Duration
 	Source   ClientSource
 	// Targets are all rendered from the same snapshot on every
-	// reconciliation. When empty, Generator, ValidateCommand, RestartCommand,
-	// UserAdder and UserRevoker describe a single target.
+	// reconciliation. When empty, Generator, ValidateCommand and
+	// RestartCommand describe a single target.
 	Targets         []Target
 	Generator       Generator
 	ValidateCommand []string
 	RestartCommand  []string
 	Runner          commandRunner
-	UserAdder       UserAdder
-	UserRevoker     UserRevoker
 	OnSync          func(SyncResult)
 	// LocalTuning comes from the agent config. Local and controller tuning
 	// are validated separately; valid controller fields then override local
@@ -132,8 +115,7 @@ type targetState struct {
 	// known. A failed restart restores it.
 	lastApplied []byte
 	// loaded is set while Xray is known to run lastHash: it restarted with
-	// that file, or HandlerService applied the change on top of a config it
-	// had loaded. Only then is the applied marker kept on disk.
+	// that file. Only then is the applied marker kept on disk.
 	loaded bool
 }
 
@@ -168,8 +150,6 @@ func NewPeriodicSyncer(opts PeriodicOptions) (*PeriodicSyncer, error) {
 			Generator:       opts.Generator,
 			ValidateCommand: opts.ValidateCommand,
 			RestartCommand:  opts.RestartCommand,
-			UserAdder:       opts.UserAdder,
-			UserRevoker:     opts.UserRevoker,
 		}}
 	}
 	s := &PeriodicSyncer{
@@ -490,17 +470,12 @@ func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, cl
 		return nil
 	}
 
-	var errs []error
 	for _, c := range changes {
-		if err := c.target.applyRuntime(ctx, c); err != nil {
-			errs = append(errs, fmt.Errorf("target %s: %w", c.target.Name, err))
-			continue
-		}
 		// Without a restart, Xray only runs the new config when it already
 		// ran the previous one and the change needed no reload.
 		c.target.markApplied(c, clients, c.target.loaded && !c.needsRestart)
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 // plan renders the target and decides how the change has to be applied. It
@@ -542,7 +517,8 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 	} else {
 		c.tuningChanged = c.tuningKey != t.lastTuningKey
 		c.added, c.removed = clientDelta(t.lastClients, clients)
-		c.needsRestart = (!t.loaded && len(t.RestartCommand) > 0) || c.tuningChanged || (len(c.removed) > 0 && t.UserRevoker == nil)
+		clientSetChanged := len(c.added) > 0 || len(c.removed) > 0
+		c.needsRestart = (!t.loaded && len(t.RestartCommand) > 0) || c.tuningChanged || (clientSetChanged && len(t.RestartCommand) > 0)
 	}
 	// Restore the config Xray last loaded, falling back to what is on disk
 	// before this agent has applied anything.
@@ -627,43 +603,6 @@ func restoreAll(changes []*change) error {
 		}
 	}
 	return errors.Join(errs...)
-}
-
-// applyRuntime applies a committed change without restarting Xray.
-func (t *targetState) applyRuntime(ctx context.Context, c *change) error {
-	if c.needsRestart {
-		switch {
-		case t.lastHash == "":
-			// No restart command: the first sync only writes the file.
-			return nil
-		case len(c.removed) > 0 && t.UserRevoker == nil:
-			return errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
-		}
-		t.logger.Warn("server tuning written without a restart command; it applies on the next Xray restart")
-	}
-	if len(c.removed) > 0 && t.UserRevoker != nil {
-		if err := t.UserRevoker.RevokeUsers(ctx, t.Generator, c.removed); err != nil {
-			return fmt.Errorf("revoke xray user sessions: %w", err)
-		}
-		if len(c.added) > 0 {
-			if t.UserAdder == nil {
-				return errors.New("dynamic user addition required after revocation")
-			}
-			if err := t.UserAdder.AddUsers(ctx, t.Generator, c.added); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if len(c.added) > 0 {
-		if t.UserAdder == nil {
-			return errors.New("dynamic xray user addition is required for client restoration")
-		}
-		if err := t.UserAdder.AddUsers(ctx, t.Generator, c.added); err != nil {
-			return fmt.Errorf("add xray users: %w", err)
-		}
-	}
-	return nil
 }
 
 func (t *targetState) markApplied(c *change, clients []Client, loaded bool) {

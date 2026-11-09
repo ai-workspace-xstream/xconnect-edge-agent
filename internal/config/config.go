@@ -156,20 +156,11 @@ type XraySync struct {
 }
 
 type SyncTarget struct {
-	Name            string          `yaml:"name"`
-	OutputPath      string          `yaml:"outputPath"`
-	TemplatePath    string          `yaml:"templatePath"`
-	ValidateCommand []string        `yaml:"validateCommand"`
-	RestartCommand  []string        `yaml:"restartCommand"`
-	DynamicUsers    DynamicUserSync `yaml:"dynamicUsers"`
-}
-
-// DynamicUserSync configures Xray HandlerService updates for runtime user changes.
-type DynamicUserSync struct {
-	TerminateSessions bool   `yaml:"terminateSessions"`
-	Enabled           bool   `yaml:"enabled"`
-	Server            string `yaml:"server"`
-	Executable        string `yaml:"executable"`
+	Name            string   `yaml:"name"`
+	OutputPath      string   `yaml:"outputPath"`
+	TemplatePath    string   `yaml:"templatePath"`
+	ValidateCommand []string `yaml:"validateCommand"`
+	RestartCommand  []string `yaml:"restartCommand"`
 }
 
 func Load(path string) (*Config, error) {
