@@ -144,12 +144,16 @@ exit "${{INGEST_EXIT:-0}}"
             self.assertNotEqual(self.run_helper(**values).returncode, 0)
         self.assertFalse((self.work / 'inventory').exists())
 
-    def test_default_playbooks_revision_contains_vault_environment_handoff(self):
-        playbooks_revision = 'main'
+    def test_installer_requires_immutable_playbooks_and_gitops_revisions(self):
         helper = (ROOT / 'scripts/setup-observability.sh').read_text()
         installer = (ROOT / 'scripts/setup-proxy.sh').read_text()
         self.assertIn('OBSERVABILITY_PLAYBOOKS_REF', helper)
-        self.assertIn(f'AGENT_PLAYBOOKS_REF:-{playbooks_revision}', installer)
+        self.assertIn('playbooks_ref="${AGENT_PLAYBOOKS_REF:-}"', installer)
+        self.assertIn('gitops_ref="${AGENT_GITOPS_REF:-}"', installer)
+        self.assertIn('AGENT_PLAYBOOKS_REF must be a full commit SHA', installer)
+        self.assertIn('AGENT_GITOPS_REF must be a full commit SHA', installer)
+        self.assertNotIn('AGENT_PLAYBOOKS_REF:-main', installer)
+        self.assertNotIn('AGENT_GITOPS_REF:-main', installer)
 
     def test_xray_metrics_repair_is_opt_in(self):
         result = self.run_helper(XRAY_EXPORTER_REPAIR_XRAY_SERVICES_ENABLED='true',
