@@ -286,10 +286,9 @@ func TestAppliedMarkerRequiresProofThatXrayLoadedTheConfig(t *testing.T) {
 	noRestart := filepath.Join(dir, "sidecar.json")
 	source := &snapshotSource{snapshot: Snapshot{Clients: []Client{alice}}}
 	log := &commandLog{}
-	adder := &recordingUserAdder{}
 	syncer := newTestSyncer(t, source, log, []Target{
-		{Name: "xhttp", Generator: Generator{Definition: DefaultDefinition(), OutputPath: output}, RestartCommand: []string{"restart", "xray"}, UserAdder: adder},
-		{Name: "sidecar", Generator: Generator{Definition: DefaultDefinition(), OutputPath: noRestart}, UserAdder: adder},
+		{Name: "xhttp", Generator: Generator{Definition: DefaultDefinition(), OutputPath: output}, RestartCommand: []string{"restart", "xray"}},
+		{Name: "sidecar", Generator: Generator{Definition: DefaultDefinition(), OutputPath: noRestart}},
 	}, nil)
 	if _, err := syncer.sync(context.Background()); err != nil {
 		t.Fatalf("bootstrap: %v", err)
@@ -302,17 +301,17 @@ func TestAppliedMarkerRequiresProofThatXrayLoadedTheConfig(t *testing.T) {
 		t.Fatal("marker written without a restart command")
 	}
 
-	// A HandlerService addition on top of a loaded config keeps the proof;
-	// the unproven target stays unproven.
+	// Client changes reload the runtime config; a file-only target stays
+	// unproven because it has no restart command.
 	source.set(Snapshot{Clients: []Client{alice, bob}})
 	if _, err := syncer.sync(context.Background()); err != nil {
 		t.Fatalf("addition: %v", err)
 	}
 	if got := readAppliedMarker(output); got != syncer.targets[0].lastHash {
-		t.Fatalf("hot addition on a loaded config must move the marker, got %q", got)
+		t.Fatalf("restarted config must move the marker, got %q", got)
 	}
 	if readAppliedMarker(noRestart) != "" {
-		t.Fatal("hot addition made an unproven config look loaded")
+		t.Fatal("file-only config became marked as loaded")
 	}
 
 	// A restarted agent therefore restarts Xray for the unproven target's
@@ -323,14 +322,14 @@ func TestAppliedMarkerRequiresProofThatXrayLoadedTheConfig(t *testing.T) {
 	if _, err := restarted.sync(context.Background()); err != nil {
 		t.Fatalf("agent restart: %v", err)
 	}
-	if log.count("restart xray") != 1 {
+	if log.count("restart xray") != 2 {
 		t.Fatalf("proven config restarted xray again: %d", log.count("restart xray"))
 	}
 
 	// A recovery restart records the config it actually restored.
 	applied := readFile(t, output)
 	log.fail = func(cmd []string) error {
-		if strings.Join(cmd, " ") == "restart xray" && log.count("restart xray") == 2 {
+		if strings.Join(cmd, " ") == "restart xray" && log.count("restart xray") == 3 {
 			return errors.New("unit failed")
 		}
 		return nil
@@ -397,18 +396,16 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := restarted.sync(context.Background()); err != nil {
 		t.Fatalf("agent restart: %v", err)
 	}
-	if log.count("restart xray") != 1 {
+	if log.count("restart xray") != 2 {
 		t.Fatal("agent restart restarted xray for a config it already runs")
 	}
 	// The adopted state is the baseline for later deltas.
 	source.set(Snapshot{Clients: []Client{alice, bob}})
-	adder := &recordingUserAdder{}
-	restarted.targets[0].UserAdder = adder
 	if _, err := restarted.sync(context.Background()); err != nil {
 		t.Fatalf("addition after adoption: %v", err)
 	}
-	if len(adder.calls) != 1 || len(adder.calls[0]) != 1 || adder.calls[0][0].ID != bob.ID {
-		t.Fatalf("addition after adoption was not a delta: %#v", adder.calls)
+	if log.count("restart xray") != 3 {
+		t.Fatalf("addition after adoption must restart xray, got %d", log.count("restart xray"))
 	}
 
 	// Without a record that Xray loaded the file, it cannot be trusted.
@@ -418,7 +415,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := newTestSyncer(t, source, log, target, nil).sync(context.Background()); err != nil {
 		t.Fatalf("agent restart without marker: %v", err)
 	}
-	if log.count("restart xray") != 2 {
+	if log.count("restart xray") != 4 {
 		t.Fatalf("unconfirmed config must restart xray, restarts=%d", log.count("restart xray"))
 	}
 
@@ -427,7 +424,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := newTestSyncer(t, source, log, target, nil).sync(context.Background()); err != nil {
 		t.Fatalf("agent restart with changed state: %v", err)
 	}
-	if log.count("restart xray") != 3 {
+	if log.count("restart xray") != 5 {
 		t.Fatalf("changed config must restart xray, restarts=%d", log.count("restart xray"))
 	}
 }

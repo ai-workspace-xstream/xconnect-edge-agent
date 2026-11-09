@@ -122,7 +122,6 @@ func TestDisconnectedSweepPurgesExpiredClientsDynamically(t *testing.T) {
 	cExpired := Client{ID: "00000000-0000-4000-8000-000000000003", Email: "expired@example.test", ExpiresAt: &past}
 
 	source := &mockClientSource{clients: []Client{cPermanent, cActive, cExpired}}
-	revoker := &fakeRevoker{}
 	restarts := 0
 
 	syncer, err := NewPeriodicSyncer(PeriodicOptions{
@@ -134,7 +133,6 @@ func TestDisconnectedSweepPurgesExpiredClientsDynamically(t *testing.T) {
 			restarts++
 			return nil, nil
 		},
-		UserRevoker: revoker,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -162,16 +160,10 @@ func TestDisconnectedSweepPurgesExpiredClientsDynamically(t *testing.T) {
 		t.Fatal("expected sync to return controller fetch error while disconnected")
 	}
 
-	// Check that disconnected sweep ran:
-	// cExpired should have been dynamically revoked via revoker without restarting Xray!
-	if restarts != 0 {
-		t.Fatalf("expected no restart during dynamic revocation, restarts=%d", restarts)
-	}
-	if len(revoker.calls) != 1 {
-		t.Fatalf("expected 1 dynamic revocation call, got %d", len(revoker.calls))
-	}
-	if len(revoker.calls[0]) != 1 || revoker.calls[0][0].ID != cExpired.ID {
-		t.Fatalf("expected revocation of expired client cExpired, got %#v", revoker.calls[0])
+	// The locally expired client is removed from the full config and Xray
+	// restarts once to apply that state.
+	if restarts != 1 {
+		t.Fatalf("expected one restart to purge the expired client, got %d", restarts)
 	}
 
 	// Check updated .expiry.json does not contain cExpired

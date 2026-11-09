@@ -215,7 +215,6 @@ This package defines the local runtime configuration model.
 | `TemplatePath` | `string` | Optional JSON template file path. |
 | `ValidateCommand` | `[]string` | Checks a candidate before it replaces the live file. It must contain `{config}` or the output path; either is replaced by a candidate written next to the output (`.<name>.candidate-*.json`). A failure keeps the live file, its permissions and the applied state, and restarts nothing. Example: `["/usr/local/bin/xray", "run", "-test", "-config", "{config}"]`. |
 | `RestartCommand` | `[]string` | Reloads Xray after the candidate is committed. Targets sharing the command are committed together and restarted once. If it fails, the last applied configs are put back and the command runs again; the error reports whether that recovery worked. A file the failed change created with no previous config behind it is removed instead, and the service is not restarted again. |
-| `DynamicUsers` | `DynamicUserSync` | Optional local Xray HandlerService endpoint used to add users without restart. Any client withdrawal restarts this target's Xray once per reconciliation because HandlerService removal cannot close established sessions; Caddy is not restarted. |
 
 #### `Load`
 
@@ -558,7 +557,7 @@ This package owns Xray config rendering and the periodic sync loop.
 
 - Signature: `type PeriodicSyncer struct`
 - Package: `internal/xrayconfig`
-- Purpose: Event-driven client reconciliation with a maximum 30-second full-state fallback; pure additions use HandlerService, while withdrawals restart the affected Xray target to close established sessions.
+- Purpose: Event-driven client reconciliation with a maximum 30-second full-state fallback; additions, restorations, withdrawals, and expirations restart only the affected Xray target with its complete desired config.
 - Parameters: None.
 - Returns: None.
 - Usage and constraints: Internal state is encapsulated; create with `NewPeriodicSyncer`.
@@ -568,9 +567,9 @@ This package owns Xray config rendering and the periodic sync loop.
   3. Render every target; a target whose rendering matches what was last applied is left alone.
   4. Write each changed target's candidate next to its file and run `ValidateCommand` on it. A failure commits nothing in that service; other services continue.
   5. Atomically rename the candidates over the live files.
-  6. Restart the service when the first sync, a tuning change, or a withdrawal without session revocation needs it; otherwise apply additions and revocations through HandlerService.
+  6. Restart the affected service for the first sync, a tuning change, or any client-set change. Ansible deployment handlers remain responsible only for host configuration and unit-file changes.
   7. If the restart fails, restore the configs Xray last loaded, run the restart command again, and report both results. On a first deploy with no previous config, the new file is removed and no recovery restart runs.
-- `.<name>.applied` next to each file records the config Xray is known to run. It is written only after the restart command succeeded with that file (including a recovery restart), or after HandlerService applied a change on top of such a config; otherwise it is removed. A target without `RestartCommand` never has one. After an agent restart, the first sync does not restart Xray when the file equals the rendered config and the record matches it; without a matching record, Xray is restarted once.
+- `.<name>.applied` next to each file records the config Xray is known to run. It is written only after the restart command succeeded with that file (including a recovery restart); otherwise it is removed. A target without `RestartCommand` never has one. After an agent restart, the first sync does not restart Xray when the file equals the rendered config and the record matches it; without a matching record, Xray is restarted once.
 - Relationships: Coordinates `ClientSource`, `Generator`, and shell commands.
 
 #### `SyncResult`

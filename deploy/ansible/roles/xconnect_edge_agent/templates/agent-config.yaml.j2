@@ -53,10 +53,6 @@ xray:
           - "systemctl"
           - "restart"
           - "xray.service"
-        dynamicUsers:
-          enabled: {{ xray_dynamic_users_enabled | lower }}
-          executable: "{{ xray_dynamic_users_executable }}"
-          server: "{{ xray_xhttp_api_server }}"
       - name: "tcp"
         outputPath: "{{ xray_tcp_config_path }}"
         templatePath: "{{ xray_template_dir }}/xray.tcp.template.json"
@@ -69,8 +65,4 @@ xray:
           - "systemctl"
           - "restart"
           - "xray-tcp.service"
-        dynamicUsers:
-          enabled: {{ xray_dynamic_users_enabled | lower }}
-          executable: "{{ xray_dynamic_users_executable }}"
-          server: "{{ xray_tcp_api_server }}"
 {% endif %}

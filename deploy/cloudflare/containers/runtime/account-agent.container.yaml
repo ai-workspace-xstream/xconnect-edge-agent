@@ -37,10 +37,6 @@ xray:
           - "systemctl"
           - "restart"
           - "xray.service"
-        dynamicUsers:
-          enabled: true
-          executable: "/usr/local/bin/xray"
-          server: "127.0.0.1:10086"
       # TCP Transport Configuration
       - name: "tcp"
         outputPath: "/usr/local/etc/xray/tcp-config.json"
@@ -50,7 +46,3 @@ xray:
           - "systemctl"
           - "restart"
           - "xray-tcp.service"
-        dynamicUsers:
-          enabled: true
-          executable: "/usr/local/bin/xray"
-          server: "127.0.0.1:10087"

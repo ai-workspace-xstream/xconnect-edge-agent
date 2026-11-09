@@ -1,5 +1,10 @@
 # Agent P0 quota disconnect: dependency contract
 
+> Superseded on 2026-11-09: Xray HandlerService user add/revoke operations were
+> removed. The Agent now applies user additions, restorations, removals, and
+> expirations by restarting only the affected Xray target with the full config.
+> The details below record the earlier design investigation.
+
 ## Current implementation facts
 
 - The Accounts agent users endpoint returns active users with their proxy UUIDs. It does not include quota state or a revision, and the current Accounts router does not provide the `users/events` endpoint consumed by this Agent.

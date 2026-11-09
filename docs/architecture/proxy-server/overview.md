@@ -52,9 +52,8 @@ flowchart TB
 - Build and reload Xray configuration files.
 - Keep TLS certificates live via Caddy.
 - Poll accounts for client and node updates.
-- Apply pure client additions and quota-renewal restores online through Xray HandlerService without restarting Xray.
 - Treat controller events as the primary synchronization trigger, with a full-state poll at least every 30 seconds as a disconnect and missed-event fallback.
-- Apply pure additions and quota-renewal restores online through Xray HandlerService. For client withdrawal, restart only the affected Xray target once per reconciled batch: `RemoveUser` rejects new authentication but does not close established VLESS sessions. Caddy is not restarted. This closes all sessions on that Xray target, not only the exhausted user's session; user, subscription, payment, refund, usage, and UUID records remain in the control plane.
+- Apply client additions, restorations, withdrawals, and expirations by restarting only the affected Xray target with the complete desired config. Caddy is not restarted. This closes all sessions on that Xray target; user, subscription, payment, refund, usage, and UUID records remain in the control plane.
 - Report agent health and sync progress back to the controller.
 - Schedule billing reconciliation and future control actions without owning the billing source of truth.
 - Leave traffic metric translation to the separate exporter layer.
