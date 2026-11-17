@@ -111,6 +111,11 @@ jobs:
           tar -czf "release-assets/artifact-${{ matrix.goarch }}-${{ needs.prep.outputs.git_commit_short }}.tar.gz" -C bundle .
           cp dist/xconnect-edge-agent "release-assets/xconnect-edge-agent-linux-${{ matrix.goarch }}"
           cp dist/caddy "release-assets/caddy-linux-${{ matrix.goarch }}"
+          # 为每个产物生成 sha256。消费方(playbooks 的 agent-proxy role)必须先
+          # 校验再安装: 没有校验和就只能"下载即信任", 那和直接 curl | bash 没区别。
+          cd release-assets
+          sha256sum ./*.tar.gz ./*-linux-${{ matrix.goarch }} > "SHA256SUMS-linux-${{ matrix.goarch }}"
+          cat "SHA256SUMS-linux-${{ matrix.goarch }}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808
