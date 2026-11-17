@@ -16,6 +16,50 @@ EOF
 }
 
 die() { printf 'setup-proxy: %s\n' "$1" >&2; exit 2; }
+
+# --- 自我更新 --------------------------------------------------------------
+# 这个脚本是通过 `curl ... | bash` 从 raw.githubusercontent.com 拿到的, 而那
+# 是 CDN, 按分支缓存且不保证最新 —— 实测 main 已合并新提交后, 分支地址仍返回
+# 旧内容, 只有按 SHA 取才拿到新的。也就是说: 不改脚本的话, 节点可能在跑几天
+# 前的逻辑, 而且完全无法察觉。
+#
+# 所以脚本每次启动都重新取一次自身:
+#   - 默认取 main 分支, 带 Cache-Control: no-cache 绕过 CDN 缓存
+#   - 指定 AGENT_SETUP_PROXY_REF=<tag|sha> 时按该 ref 取(不可变, 可复现)
+#   - 拿到的内容与本文件不同 -> 用最新版本 re-exec, 本次进程不再继续
+#   - 取不到(离线/网络故障) -> 用当前版本继续, 只提示, 不阻断部署
+#
+# 关闭方式: AGENT_SETUP_PROXY_SELF_UPDATE=false
+SETUP_PROXY_SOURCE_REPO="ai-workspace-xstream/xconnect-edge-agent"
+SETUP_PROXY_REF="${AGENT_SETUP_PROXY_REF:-main}"
+setup_proxy_self_update() {
+  [[ "${AGENT_SETUP_PROXY_SELF_UPDATE:-true}" == "true" ]] || return 0
+  # 已经是更新后的副本就不再递归
+  [[ "${AGENT_SETUP_PROXY_UPDATED:-}" == "1" ]] && return 0
+  command -v curl >/dev/null 2>&1 || return 0
+
+  local url body tmp current
+  # ref 为 40 位十六进制时是 commit SHA, 内容不可变; 否则是分支或 tag,
+  # 必须显式禁用缓存, 否则 CDN 会返回陈旧副本。
+  if [[ "$SETUP_PROXY_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    url="https://raw.githubusercontent.com/$SETUP_PROXY_SOURCE_REPO/$SETUP_PROXY_REF/scripts/setup-proxy.sh"
+  else
+    url="https://raw.githubusercontent.com/$SETUP_PROXY_SOURCE_REPO/$SETUP_PROXY_REF/scripts/setup-proxy.sh?nocache=$(date +%s)-$RANDOM"
+  fi
+
+  body="$(curl -fsSL --max-time 30 -H "Cache-Control: no-cache" -H "Pragma: no-cache" "$url" 2>/dev/null || true)"
+  [[ -n "$body" ]] || { printf "setup-proxy: cannot fetch latest, continuing with current copy\n" >&2; return 0; }
+
+  current="$(cat "${BASH_SOURCE[0]}" 2>/dev/null || true)"
+  [[ "$body" == "$current" ]] && return 0
+
+  printf "setup-proxy: update detected (ref=$SETUP_PROXY_REF), re-executing latest\n" >&2
+  tmp="$(mktemp "${TMPDIR:-/tmp}/setup-proxy.XXXXXX")"
+  printf "%s" "$body" > "$tmp"
+  chmod 0700 "$tmp"
+  AGENT_SETUP_PROXY_UPDATED=1 exec bash "$tmp" "$"
+}
+setup_proxy_self_update
 operation="${AGENT_PROXY_OPERATION:-deploy}"
 domain="${AGENT_PROXY_DOMAIN:-}"
 entry="${AGENT_ENTRY_POINT:-}"
