@@ -122,20 +122,25 @@ chmod 0600 "$work/inventory.ini"
 printf '[defaults]\nretry_files_enabled = False\n' > "$work/ansible.cfg"
 
 gitops_config="$work/xconnect-regional-pools.yaml"
-export XCONNECT_GITOPS_CONFIG="$gitops_config"
+curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
+  "https://raw.githubusercontent.com/ai-workspace-infra/gitops/${gitops_ref}/topology/prod/selfhost/xconnect-regional-pools.yaml" \
+  -o "$gitops_config" 2>/dev/null || true
+
+if [[ -s "$gitops_config" ]] && grep -q "id: $AGENT_ID" "$gitops_config" 2>/dev/null; then
+  export XCONNECT_GITOPS_CONFIG="$gitops_config"
+else
+  export XCONNECT_GITOPS_CONFIG=""
+fi
 
 if [[ "$observability" == true || "$observability" == 1 || "$observability" == yes ]]; then
   export VECTOR_BILLING_INGEST_ENABLED=true
   export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_SERVICE_BASE_URL%/}/v1/ingest/snapshots}"
   export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
 fi
+
 curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
   | tar -xz -C "$work" --strip-components=1
-curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
-  "https://raw.githubusercontent.com/ai-workspace-infra/gitops/${gitops_ref}/topology/prod/selfhost/xconnect-regional-pools.yaml" \
-  -o "$gitops_config"
-[[ -s "$gitops_config" ]] || die 'GitOps regional pools configuration is empty'
 printf 'Using Playbooks commit %s and GitOps commit %s\n' "$playbooks_ref" "$gitops_ref"
 ANSIBLE_CONFIG="$work/ansible.cfg" ansible-playbook "$work/deploy_xray_proxy_server.yml" \
   -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true agent_proxy_engine=$proxy_engine"
