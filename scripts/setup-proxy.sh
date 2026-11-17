@@ -67,11 +67,21 @@ if [[ -z "$gitops_ref" ]]; then
 fi
 [[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
 [[ "$gitops_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_GITOPS_REF must be a full commit SHA'
-command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
-if ! command -v ansible-playbook >/dev/null; then
-  command -v apt-get >/dev/null || die 'Ansible Core is required and apt-get is unavailable'
-  apt-get update && apt-get install -y ansible-core
-fi
+# --- runtime dispatch -------------------------------------------------------
+# 两种运行形态互斥, 依赖集完全不同:
+#
+#   systemd  (默认) 裸机 systemd 服务。只需要 curl / tar / systemd / ansible-core,
+#                   完全不依赖 docker、containerd、k3s、flux 或任何编排组件。
+#                   适合边缘 VPS、最小化 Debian 主机。
+#   container       交给 Kubernetes + Helm。只需要 helm 与可达的 apiserver,
+#                   不需要在宿主机上装 ansible 或裸机服务。
+#
+# 默认走 systemd: 这是覆盖绝大多数边缘节点的路径, 也最容易在最小化系统上跑通。
+case "$runtime" in
+  systemd|container|k8s) ;;
+  *) die "unsupported runtime: $runtime (expected systemd or container)" ;;
+esac
+
 
 export AGENT_ID="${AGENT_ID:-${domain:-$(hostname -f 2>/dev/null || hostname)}}"
 [[ "$AGENT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || die 'AGENT_ID must be a valid hostname-compatible identifier'
@@ -89,7 +99,10 @@ export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/${GITHUB_REPO:-ai-wo
 
 if [[ "$runtime" == "container" || "$runtime" == "k8s" ]]; then
   printf '==> Executing in container runtime (Kubernetes / Helm: xconnect-edge-proxy)\n'
-  command -v helm >/dev/null || die 'helm is required for container runtime'
+  # 容器路径不碰宿主机 ansible/裸机服务, 只要求 helm 与可达的 apiserver。
+  command -v helm >/dev/null || die 'helm is required for container runtime; install helm before using --container'
+  command -v kubectl >/dev/null || die 'kubectl is required for container runtime; install kubectl before using --container'
+  kubectl cluster-info >/dev/null 2>&1 || die 'no reachable Kubernetes cluster for container runtime'
   helm_args=(
     upgrade --install xconnect-edge-proxy
     "https://github.com/ai-workspace-infra/artifacts/raw/main/oci/charts/xconnect-edge-proxy-0.1.0.tgz"
@@ -112,6 +125,23 @@ if [[ "$runtime" == "container" || "$runtime" == "k8s" ]]; then
   printf '==> Containerized xconnect-edge-proxy deployment complete\n'
   exit 0
 fi
+
+# --- systemd (non-container) path ------------------------------------------
+# 到这里才检查裸机依赖: 容器路径已经在上面 exit, 不会走到这里。
+printf '==> Executing in systemd runtime (bare-metal service, no docker/k3s/flux required)\n'
+command -v systemctl >/dev/null || die 'systemd is required for the non-container runtime'
+command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
+if ! command -v ansible-playbook >/dev/null; then
+  command -v apt-get >/dev/null || die 'Ansible Core is required and apt-get is unavailable'
+  apt-get update && apt-get install -y ansible-core
+fi
+# 非容器路径必须保持无编排依赖。若宿主机恰好装了这些组件, 它们不参与本次部署;
+# 这里只做一次显式声明, 避免日后有人往 role 里悄悄加回 k3s/flux 依赖。
+for c in docker containerd k3s flux kubectl helm; do
+  if command -v "$c" >/dev/null 2>&1; then
+    printf '   note: %s is present but unused by the systemd runtime\n' "$c"
+  fi
+done
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/xconnect-playbooks.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
