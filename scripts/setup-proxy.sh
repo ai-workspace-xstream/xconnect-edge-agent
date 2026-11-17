@@ -6,8 +6,10 @@ usage() {
 Usage: setup-proxy.sh [--operation deploy|standalone|upgrade|print-arch] [options]
 Options: --node DOMAIN --entry-point DOMAIN --region CODE --pool NAME
          --resource-class CLASS --team-id ID --proxy-engine ENGINE
+         --runtime systemd|container [--container|--non-container]
          --with-observability --open-stunnel-5443 -h|--help
 Engines: fluxgate (default) | haproxy | caddy
+Runtimes: systemd (default, bare-metal service) | container (Kubernetes Helm chart)
 Inputs may also be provided through the corresponding AGENT_* environment variables.
 Vault credentials must be supplied in the process environment and are never persisted.
 EOF
@@ -22,6 +24,7 @@ pool="${AGENT_POOL:-}"
 class="${AGENT_RESOURCE_CLASS:-shared}"
 team="${AGENT_TEAM_ID:-}"
 proxy_engine="${AGENT_PROXY_ENGINE:-fluxgate}"
+runtime="${AGENT_RUNTIME:-systemd}"
 observability="${INSTALL_OBSERVABILITY:-false}"
 stunnel="${OPEN_STUNNEL_5443:-false}"
 
@@ -43,6 +46,10 @@ while (($#)); do
     --team-id=*) team="${1#*=}"; shift ;;
     --proxy-engine) (($# > 1)) || die "$1 requires a value"; proxy_engine="$2"; shift 2 ;;
     --proxy-engine=*) proxy_engine="${1#*=}"; shift ;;
+    --runtime) (($# > 1)) || die "$1 requires a value"; runtime="$2"; shift 2 ;;
+    --runtime=*) runtime="${1#*=}"; shift ;;
+    --container) runtime="container"; shift ;;
+    --non-container) runtime="systemd"; shift ;;
     --with-observability) observability=true; shift ;;
     --open-stunnel-5443) stunnel=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -69,6 +76,43 @@ fi
 export AGENT_ID="${AGENT_ID:-${domain:-$(hostname -f 2>/dev/null || hostname)}}"
 [[ "$AGENT_ID" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || die 'AGENT_ID must be a valid hostname-compatible identifier'
 
+export AGENT_PROXY_DOMAIN="${domain:-$AGENT_ID}" AGENT_ENTRY_POINT="${entry:-${domain:-$AGENT_ID}}"
+export AGENT_REGION="$region" AGENT_POOL="$pool" AGENT_RESOURCE_CLASS="$class" AGENT_TEAM_ID="$team"
+export AGENT_PROXY_OPERATION="$operation" AGENT_PROXY_OPEN_STUNNEL_5443="$stunnel"
+export AGENT_PROXY_ENGINE="$proxy_engine"
+export AGENT_PROXY_RUNTIME="$runtime"
+export AGENT_PROXY_OBSERVABILITY_ENABLED="$observability"
+export AGENT_CONTROLLER_URL="${AGENT_CONTROLLER_URL:-${AUTH_URL:-${ACCOUNTS_URL:-}}}"
+export BILLING_SERVICE_BASE_URL="${BILLING_SERVICE_BASE_URL:-${BILLING_SERVICE_URL:-}}"
+export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}.git}"
+[[ -z "${VAULT_TLS_SECRET_PATH:-}" ]] || export AGENT_PROXY_VAULT_TLS_ENABLED=true
+
+if [[ "$runtime" == "container" || "$runtime" == "k8s" ]]; then
+  printf '==> Executing in container runtime (Kubernetes / Helm: xconnect-edge-proxy)\n'
+  command -v helm >/dev/null || die 'helm is required for container runtime'
+  helm_args=(
+    upgrade --install xconnect-edge-proxy
+    "https://github.com/ai-workspace-infra/artifacts/raw/main/oci/charts/xconnect-edge-proxy-0.1.0.tgz"
+    --namespace xconnect --create-namespace
+    --set "global.nodeDomain=${AGENT_PROXY_DOMAIN}"
+    --set "global.entryPoint=${AGENT_ENTRY_POINT}"
+    --set "global.region=${AGENT_REGION}"
+    --set "global.pool=${AGENT_POOL}"
+    --set "global.resourceClass=${AGENT_RESOURCE_CLASS}"
+    --set "ingress.provider=${AGENT_PROXY_ENGINE}"
+    --set "observability.enabled=${observability}"
+  )
+  if [[ -n "${INTERNAL_SERVICE_TOKEN:-}" ]]; then
+    helm_args+=(--set "security.internalServiceToken=${INTERNAL_SERVICE_TOKEN}")
+  fi
+  if [[ -n "${VAULT_TOKEN:-}" ]]; then
+    helm_args+=(--set "security.vaultToken=${VAULT_TOKEN}")
+  fi
+  helm "${helm_args[@]}"
+  printf '==> Containerized xconnect-edge-proxy deployment complete\n'
+  exit 0
+fi
+
 work="$(mktemp -d "${TMPDIR:-/tmp}/xconnect-playbooks.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 chmod 0700 "$work"
@@ -77,16 +121,8 @@ printf '[agent_proxy]\n%s ansible_connection=local\n[xray_exporter]\n%s ansible_
 chmod 0600 "$work/inventory.ini"
 printf '[defaults]\nretry_files_enabled = False\n' > "$work/ansible.cfg"
 
-export AGENT_PROXY_DOMAIN="${domain:-$AGENT_ID}" AGENT_ENTRY_POINT="${entry:-${domain:-$AGENT_ID}}"
-export AGENT_REGION="$region" AGENT_POOL="$pool" AGENT_RESOURCE_CLASS="$class" AGENT_TEAM_ID="$team"
-export AGENT_PROXY_OPERATION="$operation" AGENT_PROXY_OPEN_STUNNEL_5443="$stunnel"
-export AGENT_PROXY_ENGINE="$proxy_engine"
-export AGENT_PROXY_OBSERVABILITY_ENABLED="$observability"
-export AGENT_CONTROLLER_URL="${AGENT_CONTROLLER_URL:-${AUTH_URL:-${ACCOUNTS_URL:-}}}"
-export BILLING_SERVICE_BASE_URL="${BILLING_SERVICE_BASE_URL:-${BILLING_SERVICE_URL:-}}"
-export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}.git}"
+gitops_config="$work/xconnect-regional-pools.yaml"
 export XCONNECT_GITOPS_CONFIG="$gitops_config"
-[[ -z "${VAULT_TLS_SECRET_PATH:-}" ]] || export AGENT_PROXY_VAULT_TLS_ENABLED=true
 
 if [[ "$observability" == true || "$observability" == 1 || "$observability" == yes ]]; then
   export VECTOR_BILLING_INGEST_ENABLED=true
@@ -96,7 +132,6 @@ fi
 curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
   | tar -xz -C "$work" --strip-components=1
-gitops_config="$work/xconnect-regional-pools.yaml"
 curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   "https://raw.githubusercontent.com/ai-workspace-infra/gitops/${gitops_ref}/topology/prod/selfhost/xconnect-regional-pools.yaml" \
   -o "$gitops_config"
