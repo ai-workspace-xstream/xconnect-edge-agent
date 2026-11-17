@@ -5,8 +5,9 @@ usage() {
   cat <<'EOF'
 Usage: setup-proxy.sh [--operation deploy|standalone|upgrade|print-arch] [options]
 Options: --node DOMAIN --entry-point DOMAIN --region CODE --pool NAME
-         --resource-class CLASS --team-id ID --with-observability
-         --open-stunnel-5443 -h|--help
+         --resource-class CLASS --team-id ID --proxy-engine ENGINE
+         --with-observability --open-stunnel-5443 -h|--help
+Engines: fluxgate (default) | haproxy | caddy
 Inputs may also be provided through the corresponding AGENT_* environment variables.
 Vault credentials must be supplied in the process environment and are never persisted.
 EOF
@@ -20,6 +21,7 @@ region="${AGENT_REGION:-}"
 pool="${AGENT_POOL:-}"
 class="${AGENT_RESOURCE_CLASS:-shared}"
 team="${AGENT_TEAM_ID:-}"
+proxy_engine="${AGENT_PROXY_ENGINE:-fluxgate}"
 observability="${INSTALL_OBSERVABILITY:-false}"
 stunnel="${OPEN_STUNNEL_5443:-false}"
 
@@ -39,6 +41,8 @@ while (($#)); do
     --resource-class=*) class="${1#*=}"; shift ;;
     --team-id) (($# > 1)) || die "$1 requires a value"; team="$2"; shift 2 ;;
     --team-id=*) team="${1#*=}"; shift ;;
+    --proxy-engine) (($# > 1)) || die "$1 requires a value"; proxy_engine="$2"; shift 2 ;;
+    --proxy-engine=*) proxy_engine="${1#*=}"; shift ;;
     --with-observability) observability=true; shift ;;
     --open-stunnel-5443) stunnel=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -48,6 +52,12 @@ done
 
 playbooks_ref="${AGENT_PLAYBOOKS_REF:-}"
 gitops_ref="${AGENT_GITOPS_REF:-}"
+if [[ -z "$playbooks_ref" ]]; then
+  playbooks_ref="$(git ls-remote https://github.com/ai-workspace-infra/playbooks.git HEAD 2>/dev/null | awk '{print $1}' || echo "")"
+fi
+if [[ -z "$gitops_ref" ]]; then
+  gitops_ref="$(git ls-remote https://github.com/ai-workspace-infra/gitops.git HEAD 2>/dev/null | awk '{print $1}' || echo "")"
+fi
 [[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
 [[ "$gitops_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_GITOPS_REF must be a full commit SHA'
 command -v curl >/dev/null && command -v tar >/dev/null || die 'curl and tar are required'
@@ -70,6 +80,7 @@ printf '[defaults]\nretry_files_enabled = False\n' > "$work/ansible.cfg"
 export AGENT_PROXY_DOMAIN="${domain:-$AGENT_ID}" AGENT_ENTRY_POINT="${entry:-${domain:-$AGENT_ID}}"
 export AGENT_REGION="$region" AGENT_POOL="$pool" AGENT_RESOURCE_CLASS="$class" AGENT_TEAM_ID="$team"
 export AGENT_PROXY_OPERATION="$operation" AGENT_PROXY_OPEN_STUNNEL_5443="$stunnel"
+export AGENT_PROXY_ENGINE="$proxy_engine"
 export AGENT_PROXY_OBSERVABILITY_ENABLED="$observability"
 export AGENT_CONTROLLER_URL="${AGENT_CONTROLLER_URL:-${AUTH_URL:-${ACCOUNTS_URL:-}}}"
 export BILLING_SERVICE_BASE_URL="${BILLING_SERVICE_BASE_URL:-${BILLING_SERVICE_URL:-}}"
@@ -92,4 +103,4 @@ curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
 [[ -s "$gitops_config" ]] || die 'GitOps regional pools configuration is empty'
 printf 'Using Playbooks commit %s and GitOps commit %s\n' "$playbooks_ref" "$gitops_ref"
 ANSIBLE_CONFIG="$work/ansible.cfg" ansible-playbook "$work/deploy_xray_proxy_server.yml" \
-  -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true"
+  -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true agent_proxy_engine=$proxy_engine"
