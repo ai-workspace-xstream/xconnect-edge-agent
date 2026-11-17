@@ -210,7 +210,19 @@ if [[ "$observability" == true || "$observability" == 1 || "$observability" == y
   export VECTOR_BILLING_INGEST_ENABLED=true
   export VECTOR_BILLING_INGEST_URL="${VECTOR_BILLING_INGEST_URL:-${BILLING_SERVICE_BASE_URL%/}/v1/ingest/snapshots}"
   export VECTOR_SNAPSHOT_URL="${VECTOR_SNAPSHOT_URL:-http://127.0.0.1:8686}"
+  if [[ -z "${VECTOR_AUTH_USER:-}" || -z "${VECTOR_AUTH_PASSWORD:-}" ]]; then
+    if [[ -n "${VAULT_ADDR:-}" && -n "${VAULT_TOKEN:-}" ]]; then
+      obs_vault_path="${AGENT_PROXY_VECTOR_VAULT_KV_PATH:-${VAULT_OBSERVABILITY_SECRET_PATH:-kv/data/CICD/observability}}"
+      resp="$(curl -fsSL -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR%/}/v1/${obs_vault_path#/}" 2>/dev/null || true)"
+      if [[ -n "$resp" ]]; then
+        export VECTOR_AUTH_USER="$(echo "$resp" | jq -r '.data.data.user // empty' 2>/dev/null || true)"
+        export VECTOR_AUTH_PASSWORD="$(echo "$resp" | jq -r '.data.data.password // empty' 2>/dev/null || true)"
+      fi
+    fi
+  fi
 fi
+
+export AGENT_BILLING_ENABLED="${AGENT_BILLING_ENABLED:-false}"
 
 curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   "https://github.com/ai-workspace-infra/playbooks/archive/${playbooks_ref}.tar.gz" \
