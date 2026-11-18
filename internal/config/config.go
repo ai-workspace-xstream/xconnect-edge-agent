@@ -7,6 +7,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -178,6 +179,94 @@ func Load(path string) (*Config, error) {
 // LoadManaged loads the bootstrap configuration and its provisioned snapshot.
 func LoadManaged(path string) (*Config, error) {
 	return load(path, true)
+}
+
+// LoadAll loads the base configuration and any profile fragments in a sibling
+// conf.d directory. When conf.d contains *.yaml or *.yml files, each file is
+// decoded on top of a copy of the base configuration and finalized as an
+// independent runtime profile.
+func LoadAll(path string, managed bool) ([]*Config, error) {
+	confDir := filepath.Join(filepath.Dir(path), "conf.d")
+	entries, err := os.ReadDir(confDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			cfg, err := load(path, managed)
+			if err != nil {
+				return nil, err
+			}
+			return []*Config{cfg}, nil
+		}
+		return nil, fmt.Errorf("read conf.d directory: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if ext == ".yaml" || ext == ".yml" {
+			files = append(files, filepath.Join(confDir, entry.Name()))
+		}
+	}
+	sort.Strings(files)
+	if len(files) == 0 {
+		cfg, err := load(path, managed)
+		if err != nil {
+			return nil, err
+		}
+		return []*Config{cfg}, nil
+	}
+
+	var baseCfg Config
+	if raw, err := os.ReadFile(path); err == nil {
+		if err := yaml.Unmarshal(raw, &baseCfg); err != nil {
+			return nil, fmt.Errorf("decode base config %s: %w", path, err)
+		}
+		if managed {
+			overlayPath := filepath.Join(strings.TrimSuffix(path, filepath.Ext(path))+".d", "managed.yaml")
+			if err := loadManagedOverlay(overlayPath, &baseCfg); err != nil {
+				return nil, err
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read base config %s: %w", path, err)
+	}
+
+	configs := make([]*Config, 0, len(files))
+	seenIDs := make(map[string]struct{}, len(files))
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("read conf.d file %s: %w", file, err)
+		}
+		cfg := baseCfg
+		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			return nil, fmt.Errorf("decode conf.d file %s: %w", file, err)
+		}
+		finalized, err := finalizeConfig(cfg)
+		if err != nil {
+			return nil, fmt.Errorf("finalize conf.d file %s: %w", file, err)
+		}
+		if finalized.Mode != "" && finalized.Mode != "agent" {
+			return nil, fmt.Errorf("invalid run mode in %s: expected agent, got %s", file, finalized.Mode)
+		}
+		if id := strings.TrimSpace(finalized.Agent.ID); id != "" {
+			seenIDs[id] = struct{}{}
+		}
+		configs = append(configs, finalized)
+	}
+
+	if baseID := strings.TrimSpace(baseCfg.Agent.ID); baseID != "" {
+		if _, exists := seenIDs[baseID]; !exists {
+			finalizedBase, err := finalizeConfig(baseCfg)
+			if err != nil {
+				return nil, err
+			}
+			configs = append([]*Config{finalizedBase}, configs...)
+		}
+	}
+	return configs, nil
 }
 
 func load(path string, managed bool) (*Config, error) {
