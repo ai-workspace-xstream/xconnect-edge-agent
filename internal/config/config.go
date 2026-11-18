@@ -38,30 +38,38 @@ type Log struct {
 type Agent struct {
 	CustomAllowFree bool `yaml:"customAllowFree"`
 	// ResourceClass selects the user sync scope: shared, free, plus, pro, or team.
-	AllowedEmails     []string      `yaml:"allowedEmails"`
-	ResourceClass     string        `yaml:"resourceClass"`
-	TeamID            string        `yaml:"teamId"`
-	OverlayStatusPath string        `yaml:"overlayStatusPath"`
-	Role              string        `yaml:"role"`
-	ID                string        `yaml:"id"`
-	NodeID            string        `yaml:"nodeId"`
-	NetworkID         string        `yaml:"networkId"`
-	Region            string        `yaml:"region"`
-	Pool              string        `yaml:"pool"`
-	EntryPoint        string        `yaml:"entryPoint"`
-	OpenToUsers       *bool         `yaml:"openToUsers"`
-	Provider          string        `yaml:"provider"`
-	Product           string        `yaml:"product"`
-	LineCode          string        `yaml:"lineCode"`
-	PricingGroup      string        `yaml:"pricingGroup"`
-	StatsEnabled      bool          `yaml:"statsEnabled"`
-	ControllerURL     string        `yaml:"controllerUrl"`
-	APIToken          string        `yaml:"apiToken"`
-	Domain            string        `yaml:"domain"`
-	HTTPTimeout       time.Duration `yaml:"httpTimeout"`
-	StatusInterval    time.Duration `yaml:"statusInterval"`
-	SyncInterval      time.Duration `yaml:"syncInterval"`
-	TLS               TLS           `yaml:"tls"`
+	AllowedEmails        []string       `yaml:"allowedEmails"`
+	ResourceClass        string         `yaml:"resourceClass"`
+	TeamID               string         `yaml:"teamId"`
+	OverlayStatusPath    string         `yaml:"overlayStatusPath"`
+	GatewayTelemetryPath string         `yaml:"gatewayTelemetryPath"`
+	Gateway              ControlGateway `yaml:"gateway"`
+	Role                 string         `yaml:"role"`
+	ID                   string         `yaml:"id"`
+	NodeID               string         `yaml:"nodeId"`
+	NetworkID            string         `yaml:"networkId"`
+	Region               string         `yaml:"region"`
+	Pool                 string         `yaml:"pool"`
+	EntryPoint           string         `yaml:"entryPoint"`
+	OpenToUsers          *bool          `yaml:"openToUsers"`
+	Provider             string         `yaml:"provider"`
+	Product              string         `yaml:"product"`
+	LineCode             string         `yaml:"lineCode"`
+	PricingGroup         string         `yaml:"pricingGroup"`
+	StatsEnabled         bool           `yaml:"statsEnabled"`
+	ControllerURL        string         `yaml:"controllerUrl"`
+	APIToken             string         `yaml:"apiToken"`
+	Domain               string         `yaml:"domain"`
+	HTTPTimeout          time.Duration  `yaml:"httpTimeout"`
+	StatusInterval       time.Duration  `yaml:"statusInterval"`
+	SyncInterval         time.Duration  `yaml:"syncInterval"`
+	TLS                  TLS            `yaml:"tls"`
+}
+
+type ControlGateway struct {
+	Enabled      bool     `yaml:"enabled"`
+	StateDir     string   `yaml:"stateDir"`
+	ApplyCommand []string `yaml:"applyCommand"`
 }
 
 const (

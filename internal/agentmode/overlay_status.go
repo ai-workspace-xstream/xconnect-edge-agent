@@ -2,12 +2,14 @@ package agentmode
 
 import (
 	"encoding/json"
-	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
-	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
 )
 
 // Read only typed, bounded public telemetry. Never read WG/config/key state.
@@ -37,9 +39,63 @@ func readOverlayStatus(agent config.Agent) *agentproto.OverlayStatus {
 		return nil
 	}
 	for _, path := range status.Paths {
-		if path.DeviceID == "" || (path.Path != "direct-lan" && path.Path != "relay") {
+		if path.DeviceID == "" || !validOverlayPath(path.Path) {
 			return nil
 		}
 	}
 	return &status
+}
+
+func validOverlayPath(path string) bool {
+	switch path {
+	case "direct-lan", "relay", "vless-xhttp", "wg-udp":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveGatewayTelemetryPath(agent config.Agent) string {
+	if path := strings.TrimSpace(agent.GatewayTelemetryPath); path != "" {
+		return path
+	}
+	if agent.EffectiveRole() == config.RoleGateway && strings.TrimSpace(agent.OverlayStatusPath) != "" {
+		return filepath.Join(filepath.Dir(agent.OverlayStatusPath), "gateway-telemetry.json")
+	}
+	return ""
+}
+
+// readGatewayTelemetry reads bounded, non-secret gateway telemetry from disk.
+func readGatewayTelemetry(agent config.Agent) *agentproto.GatewayTelemetry {
+	path := resolveGatewayTelemetryPath(agent)
+	if !filepath.IsAbs(path) {
+		return nil
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 262144 {
+		return nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, 262145))
+	if err != nil || len(raw) > 262144 {
+		return nil
+	}
+	var telemetry agentproto.GatewayTelemetry
+	if err := json.Unmarshal(raw, &telemetry); err != nil {
+		return nil
+	}
+	now := time.Now()
+	if telemetry.GatewayID != firstNonEmpty(agent.NodeID, agent.ID) ||
+		telemetry.NetworkID != agent.NetworkID ||
+		!telemetry.ExpiresAt.After(now) ||
+		telemetry.SampledAt.After(now.Add(5*time.Second)) ||
+		len(telemetry.Peers) > 512 ||
+		len(telemetry.TopApps) > 64 {
+		return nil
+	}
+	return &telemetry
 }

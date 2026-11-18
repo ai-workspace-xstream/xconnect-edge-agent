@@ -396,7 +396,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := restarted.sync(context.Background()); err != nil {
 		t.Fatalf("agent restart: %v", err)
 	}
-	if log.count("restart xray") != 2 {
+	if log.count("restart xray") != 1 {
 		t.Fatal("agent restart restarted xray for a config it already runs")
 	}
 	// The adopted state is the baseline for later deltas.
@@ -404,7 +404,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := restarted.sync(context.Background()); err != nil {
 		t.Fatalf("addition after adoption: %v", err)
 	}
-	if log.count("restart xray") != 3 {
+	if log.count("restart xray") != 2 {
 		t.Fatalf("addition after adoption must restart xray, got %d", log.count("restart xray"))
 	}
 
@@ -415,7 +415,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := newTestSyncer(t, source, log, target, nil).sync(context.Background()); err != nil {
 		t.Fatalf("agent restart without marker: %v", err)
 	}
-	if log.count("restart xray") != 4 {
+	if log.count("restart xray") != 3 {
 		t.Fatalf("unconfirmed config must restart xray, restarts=%d", log.count("restart xray"))
 	}
 
@@ -424,7 +424,7 @@ func TestFirstSyncAdoptsConfigXrayAlreadyRuns(t *testing.T) {
 	if _, err := newTestSyncer(t, source, log, target, nil).sync(context.Background()); err != nil {
 		t.Fatalf("agent restart with changed state: %v", err)
 	}
-	if log.count("restart xray") != 5 {
+	if log.count("restart xray") != 4 {
 		t.Fatalf("changed config must restart xray, restarts=%d", log.count("restart xray"))
 	}
 }

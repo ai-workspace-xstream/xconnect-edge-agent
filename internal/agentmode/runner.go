@@ -123,8 +123,16 @@ func Run(ctx context.Context, opts Options) error {
 	// processes are owned by xconnect-gateway/xconnect-one respectively.
 	// Those roles still authenticate and report their control-plane health.
 	if !agentOwnsXraySync(opts.Agent) {
-		logger.Info("external data-plane role; skipping agent-proxy Xray synchronization", "role", opts.Agent.EffectiveRole())
-		tracker.MarkSuccess(time.Now().UTC())
+		if gatewayControlSyncEnabled(opts.Agent) {
+			stopGatewaySync, err := startGatewayControlSyncer(ctx, opts.Agent, syncInterval, httpTimeout, tracker, logger)
+			if err != nil {
+				return err
+			}
+			stopFuncs = append(stopFuncs, stopGatewaySync)
+		} else {
+			logger.Info("external data-plane role; skipping agent-proxy Xray synchronization", "role", opts.Agent.EffectiveRole())
+			tracker.MarkSuccess(time.Now().UTC())
+		}
 	} else {
 		source := NewHTTPClientSource(client, tracker)
 		source.allowedEmails = opts.Agent.AllowedEmails
@@ -406,6 +414,25 @@ func buildStatusReport(agent config.Agent, snapshot trackerSnapshot, syncInterva
 			report.Message = "overlay runtime status unavailable or stale"
 		} else {
 			report.Healthy = report.Overlay.Healthy
+		}
+	}
+	if agent.EffectiveRole() == config.RoleGateway {
+		report.GatewayTelemetry = readGatewayTelemetry(agent)
+		if report.GatewayTelemetry != nil {
+			if report.SyncRevision == "" {
+				report.SyncRevision = fmt.Sprint(report.GatewayTelemetry.AppliedGeneration)
+			}
+			if report.Xray.XrayRevision == "" {
+				report.Xray.XrayRevision = report.SyncRevision
+			}
+			connected := 0
+			for _, peer := range report.GatewayTelemetry.Peers {
+				if peer.Connected {
+					connected++
+				}
+			}
+			report.Users = connected
+			report.Xray.Clients = connected
 		}
 	}
 	return report
