@@ -6,11 +6,12 @@ usage() {
 Usage: setup-proxy.sh [--operation deploy|standalone|upgrade|print-arch] [options]
 Options: --node DOMAIN --entry-point DOMAIN --region CODE --pool NAME
          --resource-class CLASS --team-id ID --proxy-engine ENGINE
+         --gateway-domain DOMAIN --gateway-socket PATH
          --runtime systemd|container [--container|--non-container]
          --with-observability --open-stunnel-5443 -h|--help
 Engines: fluxgate (default) | haproxy | caddy
 Runtimes: systemd (default, bare-metal service) | container (Kubernetes Helm chart)
-Inputs may also be provided through the corresponding AGENT_* environment variables.
+Inputs may also be provided through the corresponding AGENT_* or XCONNECT_GATEWAY_* environment variables.
 Vault credentials must be supplied in the process environment and are never persisted.
 EOF
 }
