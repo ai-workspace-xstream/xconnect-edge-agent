@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -46,35 +47,63 @@ func main() {
 		}()
 	}
 
-	loadConfig := config.Load
-	if *managedConfig {
-		loadConfig = config.LoadManaged
-	}
-	cfg, err := loadConfig(*configPath)
+	configs, err := config.LoadAll(*configPath, *managedConfig)
 	if err != nil {
 		logger.Error("failed to load configuration", "path", *configPath, "err", err)
-		os.Exit(1)
-	}
-
-	if cfg.Mode != "" && cfg.Mode != "agent" {
-		logger.Error("invalid run mode", "expected", "agent", "got", cfg.Mode)
 		os.Exit(1)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	logger.Info("starting agent", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole(), "resourceClass", cfg.Agent.ResourceClass, "teamId", cfg.Agent.TeamID, "pool", cfg.Agent.Pool)
-
-	opts := agentmode.Options{
-		Logger:  logger,
-		Agent:   cfg.Agent,
-		Xray:    cfg.Xray,
-		Billing: cfg.Billing,
+	if len(configs) == 1 {
+		cfg := configs[0]
+		if cfg.Mode != "" && cfg.Mode != "agent" {
+			logger.Error("invalid run mode", "expected", "agent", "got", cfg.Mode)
+			os.Exit(1)
+		}
+		logger.Info("starting agent", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole(), "resourceClass", cfg.Agent.ResourceClass, "teamId", cfg.Agent.TeamID, "pool", cfg.Agent.Pool)
+		opts := agentmode.Options{
+			Logger:  logger,
+			Agent:   cfg.Agent,
+			Xray:    cfg.Xray,
+			Billing: cfg.Billing,
+		}
+		if err := agentmode.Run(ctx, opts); err != nil {
+			logger.Error("agent runtime failed", "err", err)
+			os.Exit(1)
+		}
+		return
 	}
 
-	if err := agentmode.Run(ctx, opts); err != nil {
-		logger.Error("agent runtime failed", "err", err)
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(configs))
+	for _, cfg := range configs {
+		if cfg.Mode != "" && cfg.Mode != "agent" {
+			logger.Error("invalid run mode", "id", cfg.Agent.ID, "expected", "agent", "got", cfg.Mode)
+			os.Exit(1)
+		}
+		profileLogger := logger.With("profile", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole())
+		profileLogger.Info("starting agent profile", "id", cfg.Agent.ID, "role", cfg.Agent.EffectiveRole(), "resourceClass", cfg.Agent.ResourceClass, "teamId", cfg.Agent.TeamID, "pool", cfg.Agent.Pool)
+		opts := agentmode.Options{
+			Logger:  profileLogger,
+			Agent:   cfg.Agent,
+			Xray:    cfg.Xray,
+			Billing: cfg.Billing,
+		}
+		wg.Add(1)
+		go func(id string, runOpts agentmode.Options) {
+			defer wg.Done()
+			if runErr := agentmode.Run(ctx, runOpts); runErr != nil && ctx.Err() == nil {
+				errCh <- fmt.Errorf("profile %s: %w", id, runErr)
+				cancel()
+			}
+		}(cfg.Agent.ID, opts)
+	}
+	wg.Wait()
+	close(errCh)
+	for runErr := range errCh {
+		logger.Error("agent runtime failed", "err", runErr)
 		os.Exit(1)
 	}
 
