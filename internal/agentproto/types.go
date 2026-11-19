@@ -6,6 +6,10 @@ import (
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
+// RoutingPolicy represents controller-managed traffic routing rules and pool
+// assignment for an edge node.
+type RoutingPolicy = xrayconfig.RoutingPolicy
+
 // UserScope is the controller-authorized audience, not a client-supplied claim.
 type UserScope struct {
 	EmailPolicy     string `json:"emailPolicy,omitempty"`
@@ -27,7 +31,8 @@ type ClientListResponse struct {
 	Revision         string              `json:"revision,omitempty"`
 	// Tuning optionally adjusts allowlisted Xray runtime knobs on this node.
 	// Omitting it keeps the agent's local tuning and the template values.
-	Tuning *xrayconfig.ServerTuning `json:"tuning,omitempty"`
+	Tuning        *xrayconfig.ServerTuning `json:"tuning,omitempty"`
+	RoutingPolicy *RoutingPolicy           `json:"routingPolicy,omitempty"`
 }
 
 // StatusReport captures the runtime state of an agent and the managed Xray
