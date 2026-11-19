@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -33,14 +34,22 @@ type TuningSource interface {
 	ServerTuning() *ServerTuning
 }
 
+// PolicyClientSource is an optional extension of ClientSource that also
+// provides a controller-assigned routing policy.
+type PolicyClientSource interface {
+	ClientSource
+	ListClientsWithPolicy(ctx context.Context) ([]Client, *RoutingPolicy, error)
+}
+
 type commandRunner func(ctx context.Context, cmd []string) ([]byte, error)
 
 // Snapshot is the desired state from one controller response: the clients,
-// the controller tuning and the revision, fetched together.
+// the controller tuning, routing policy and the revision, fetched together.
 type Snapshot struct {
-	Clients  []Client
-	Tuning   *ServerTuning
-	Revision string
+	Clients       []Client
+	Tuning        *ServerTuning
+	RoutingPolicy *RoutingPolicy
+	Revision      string
 }
 
 // SnapshotSource is optionally implemented by a ClientSource that returns the
@@ -99,6 +108,7 @@ type PeriodicSyncer struct {
 	groups           [][]*targetState
 	targets          []*targetState
 	lastRemoteTuning *ServerTuning
+	lastRemotePolicy *RoutingPolicy
 	remoteRejected   string
 }
 
@@ -108,9 +118,10 @@ type targetState struct {
 	Target
 	logger *slog.Logger
 
-	lastHash      string
-	lastClients   []Client
-	lastTuningKey string
+	lastHash          string
+	lastNonClientHash string
+	lastClients       []Client
+	lastTuningKey     string
 	// lastApplied is the config Xray last loaded successfully; nil until
 	// known. A failed restart restores it.
 	lastApplied []byte
@@ -334,11 +345,20 @@ func (s *PeriodicSyncer) fetch(ctx context.Context) (Snapshot, error) {
 	if source, ok := s.source.(SnapshotSource); ok {
 		return source.FetchSnapshot(ctx)
 	}
-	clients, err := s.source.ListClients(ctx)
+	var (
+		clients []Client
+		policy  *RoutingPolicy
+		err     error
+	)
+	if source, ok := s.source.(PolicyClientSource); ok {
+		clients, policy, err = source.ListClientsWithPolicy(ctx)
+	} else {
+		clients, err = s.source.ListClients(ctx)
+	}
 	if err != nil {
 		return Snapshot{}, err
 	}
-	snapshot := Snapshot{Clients: clients}
+	snapshot := Snapshot{Clients: clients, RoutingPolicy: policy}
 	if source, ok := s.source.(TuningSource); ok {
 		snapshot.Tuning = source.ServerTuning()
 	}
@@ -376,6 +396,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (count int, syncErr error) {
 		return 0, fmt.Errorf("list clients: %w", err)
 	}
 	s.lastRemoteTuning = snapshot.Tuning
+	s.lastRemotePolicy = snapshot.RoutingPolicy
 	now := time.Now().UTC()
 	clients := filterActiveClients(snapshot.Clients, now)
 	span.SetAttributes(attribute.Int("xconnect.sync.client_count", len(clients)))
@@ -383,7 +404,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (count int, syncErr error) {
 
 	var errs []error
 	for _, group := range s.groups {
-		if err := s.syncGroup(ctx, group, clients, tuning); err != nil {
+		if err := s.syncGroup(ctx, group, clients, tuning, snapshot.RoutingPolicy); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -398,22 +419,24 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (count int, syncErr error) {
 // change is a validated candidate for one target that differs from what was
 // last applied.
 type change struct {
-	target    *targetState
-	rendered  []byte
-	hash      string
-	tuningKey string
-	candidate string
-	previous  fileSnapshot
+	target        *targetState
+	rendered      []byte
+	hash          string
+	nonClientHash string
+	tuningKey     string
+	candidate     string
+	previous      fileSnapshot
 	// needsRestart is set when only reloading Xray applies the change:
-	// the first sync, a tuning change, or a withdrawal without session
-	// revocation.
+	// the first sync, a tuning change, a routing/policy change, or a
+	// withdrawal without session revocation.
 	needsRestart  bool
 	tuningChanged bool
+	policyChanged bool
 	added         []Client
 	removed       []Client
 }
 
-func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, clients []Client, tuning *ServerTuning) error {
+func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, clients []Client, tuning *ServerTuning, policy *RoutingPolicy) error {
 	var changes []*change
 	defer func() {
 		for _, c := range changes {
@@ -423,7 +446,7 @@ func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, cl
 		}
 	}()
 	for _, target := range group {
-		c, err := target.plan(clients, tuning)
+		c, err := target.plan(clients, tuning, policy)
 		if err != nil {
 			return fmt.Errorf("target %s: %w", target.Name, err)
 		}
@@ -480,18 +503,26 @@ func (s *PeriodicSyncer) syncGroup(ctx context.Context, group []*targetState, cl
 
 // plan renders the target and decides how the change has to be applied. It
 // returns nil when the target already runs this config.
-func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, error) {
+func (t *targetState) plan(clients []Client, tuning *ServerTuning, policy *RoutingPolicy) (*change, error) {
 	generator := t.Generator
 	generator.Tuning = tuning
+	if policy != nil {
+		generator.RoutingPolicy = policy
+	}
 	rendered, err := generator.Render(clients)
 	if err != nil {
 		return nil, fmt.Errorf("render config: %w", err)
 	}
+	nonClientHash, err := nonClientConfigHash(rendered)
+	if err != nil {
+		return nil, fmt.Errorf("hash non-client config: %w", err)
+	}
 	c := &change{
-		target:    t,
-		rendered:  rendered,
-		hash:      sha256Hex(rendered),
-		tuningKey: tuning.Key(),
+		target:        t,
+		rendered:      rendered,
+		hash:          sha256Hex(rendered),
+		nonClientHash: nonClientHash,
+		tuningKey:     tuning.Key(),
 	}
 	// A failed recovery clears loaded but keeps lastHash for the previous
 	// config. A controller rollback to that hash must retry the restart.
@@ -516,9 +547,10 @@ func (t *targetState) plan(clients []Client, tuning *ServerTuning) (*change, err
 		c.needsRestart = true
 	} else {
 		c.tuningChanged = c.tuningKey != t.lastTuningKey
+		c.policyChanged = c.nonClientHash != t.lastNonClientHash
 		c.added, c.removed = clientDelta(t.lastClients, clients)
 		clientSetChanged := len(c.added) > 0 || len(c.removed) > 0
-		c.needsRestart = (!t.loaded && len(t.RestartCommand) > 0) || c.tuningChanged || (clientSetChanged && len(t.RestartCommand) > 0)
+		c.needsRestart = (!t.loaded && len(t.RestartCommand) > 0) || c.tuningChanged || c.policyChanged || (clientSetChanged && len(t.RestartCommand) > 0)
 	}
 	// Restore the config Xray last loaded, falling back to what is on disk
 	// before this agent has applied anything.
@@ -607,6 +639,7 @@ func restoreAll(changes []*change) error {
 
 func (t *targetState) markApplied(c *change, clients []Client, loaded bool) {
 	t.lastHash = c.hash
+	t.lastNonClientHash = c.nonClientHash
 	t.lastClients = append([]Client(nil), clients...)
 	t.lastTuningKey = c.tuningKey
 	t.lastApplied = c.rendered
@@ -718,6 +751,50 @@ func defaultCommandRunner(ctx context.Context, cmd []string) ([]byte, error) {
 	return c.CombinedOutput()
 }
 
+func nonClientConfigHash(rendered []byte) (string, error) {
+	var root map[string]interface{}
+	if err := json.Unmarshal(rendered, &root); err != nil {
+		return "", err
+	}
+	if inbounds, ok := root["inbounds"].([]interface{}); ok {
+		for _, raw := range inbounds {
+			inbound, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+				if _, exists := settings["clients"]; exists {
+					settings["clients"] = []interface{}{}
+				}
+			}
+		}
+	}
+	if outbounds, ok := root["outbounds"].([]interface{}); ok {
+		for _, raw := range outbounds {
+			outbound, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if settings, ok := outbound["settings"].(map[string]interface{}); ok {
+				if vnext, ok := settings["vnext"].([]interface{}); ok {
+					for _, rawVN := range vnext {
+						if vn, ok := rawVN.(map[string]interface{}); ok {
+							if _, exists := vn["users"]; exists {
+								vn["users"] = []interface{}{}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	normalized, err := json.Marshal(root)
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(normalized), nil
+}
+
 func sha256Hex(b []byte) string {
 	h := sha256.Sum256(b)
 	return hex.EncodeToString(h[:])
@@ -788,7 +865,7 @@ func (s *PeriodicSyncer) sweepDisconnected(ctx context.Context, now time.Time) (
 			continue
 		}
 		activeClients := filterActiveClients(group[0].lastClients, now)
-		if err := s.syncGroup(ctx, group, activeClients, tuning); err != nil {
+		if err := s.syncGroup(ctx, group, activeClients, tuning, s.lastRemotePolicy); err != nil {
 			errs = append(errs, err)
 		} else {
 			totalSwept += groupSwept

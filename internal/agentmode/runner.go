@@ -172,9 +172,11 @@ func Run(ctx context.Context, opts Options) error {
 			}
 
 			generator := xrayconfig.Generator{
-				Definition: xrayconfig.DefaultDefinition(),
-				OutputPath: outputPath,
-				Domain:     opts.Agent.Domain,
+				Definition:   xrayconfig.DefaultDefinition(),
+				OutputPath:   outputPath,
+				Domain:       opts.Agent.Domain,
+				RoutingPool:  resolveRoutingPool(opts.Agent),
+				PricingGroup: strings.TrimSpace(opts.Agent.PricingGroup),
 			}
 			if templatePath := strings.TrimSpace(target.TemplatePath); templatePath != "" {
 				payload, err := os.ReadFile(templatePath)
@@ -260,6 +262,13 @@ func userConfigSyncInterval(configured time.Duration) time.Duration {
 
 func agentOwnsXraySync(agent config.Agent) bool {
 	return agent.EffectiveRole() == config.RoleAgentProxy
+}
+
+func resolveRoutingPool(agent config.Agent) string {
+	if mapped := xrayconfig.MapResourceClassToRoutingPool(agent.ResourceClass); mapped != "" {
+		return mapped
+	}
+	return strings.TrimSpace(agent.Pool)
 }
 
 func runUserConfigEventWatcher(ctx context.Context, client *Client, syncers []*xrayconfig.PeriodicSyncer, logger *slog.Logger) {

@@ -13,4 +13,5 @@
 
 | 日期 | 任务 | 状态 | 关联 PR |
 |---|---|---|---|
+| 2026-10-15 | [XHTTP 用户链路观测：跨仓实施规划](2026-10-15-xhttp-user-observability-plan.md) | 规划完成，待实施 | 尚未创建 |
 | 2026-09-18 | [XConnect 边缘收敛与 ACK 闭环：开发规划](2026-09-18-xconnect-edge-convergence-plan.md) | 🟡 执行中（I-0） | 待填 |

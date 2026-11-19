@@ -65,7 +65,8 @@
                 "enabled": true,
                 "destOverride": [
                     "http",
-                    "tls"
+                    "tls",
+                    "quic"
                 ]
             }
         }
@@ -83,11 +84,17 @@
     "policy": {
         "levels": {
             "0": {
-                "statsUserUplink": true,
-                "statsUserDownlink": true,
                 "handshake": 2,
-                "connIdle": 120
+                "connIdle": 120,
+                "statsUserUplink": true,
+                "statsUserDownlink": true
             }
+        },
+        "system": {
+            "statsInboundUplink": true,
+            "statsInboundDownlink": true,
+            "statsOutboundUplink": true,
+            "statsOutboundDownlink": true
         }
     }
 }

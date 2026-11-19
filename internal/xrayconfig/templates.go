@@ -28,6 +28,14 @@ const defaultTemplate = `{
           "mode": "auto",
           "path": "/split"
         }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ]
       }
     }
   ],
@@ -62,6 +70,12 @@ const defaultTemplate = `{
         "statsUserDownlink": true,
         "bufferSize": 512
       }
+    },
+    "system": {
+      "statsInboundUplink": true,
+      "statsInboundDownlink": true,
+      "statsOutboundUplink": true,
+      "statsOutboundDownlink": true
     }
   },
   "stats": {}
