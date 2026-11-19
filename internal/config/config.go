@@ -1,9 +1,13 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -29,6 +33,7 @@ type Agent struct {
 	NetworkID         string        `yaml:"networkId"`
 	Region            string        `yaml:"region"`
 	Pool              string        `yaml:"pool"`
+	ResourceClass     string        `yaml:"resourceClass"`
 	EntryPoint        string        `yaml:"entryPoint"`
 	OpenToUsers       *bool         `yaml:"openToUsers"`
 	Provider          string        `yaml:"provider"`
@@ -119,15 +124,165 @@ func Load(path string) (*Config, error) {
 	}
 	defer f.Close()
 
-	return LoadReader(f)
+	cfg, err := decodeConfig(f)
+	if err != nil {
+		return nil, err
+	}
+
+	fragments, err := filepath.Glob(filepath.Join(filepath.Dir(path), "conf.d", "*.yaml"))
+	if err != nil {
+		return nil, fmt.Errorf("glob conf.d fragments: %w", err)
+	}
+	sort.Strings(fragments)
+
+	for _, fragPath := range fragments {
+		frag, ok, err := loadFragment(fragPath)
+		if err != nil {
+			return nil, fmt.Errorf("load config fragment %s: %w", fragPath, err)
+		}
+		if !ok {
+			continue
+		}
+		if !shouldMergeFragment(cfg.Agent.EffectiveRole(), frag.Agent.Role) {
+			continue
+		}
+		mergeConfig(&cfg, frag)
+	}
+
+	if err := applyEnvAndValidate(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
 }
 
 func LoadReader(r io.Reader) (*Config, error) {
+	cfg, err := decodeConfig(r)
+	if err != nil {
+		return nil, err
+	}
+	if err := applyEnvAndValidate(&cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func decodeConfig(r io.Reader) (Config, error) {
 	var cfg Config
 	if err := yaml.NewDecoder(r).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("decode config: %w", err)
+		return Config{}, fmt.Errorf("decode config: %w", err)
+	}
+	return cfg, nil
+}
+
+func loadFragment(path string) (Config, bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Config{}, false, err
+	}
+	defer f.Close()
+
+	var frag Config
+	if err := yaml.NewDecoder(f).Decode(&frag); err != nil {
+		if errors.Is(err, io.EOF) {
+			return Config{}, false, nil
+		}
+		return Config{}, false, err
+	}
+	return frag, true, nil
+}
+
+func shouldMergeFragment(baseRole, fragRole string) bool {
+	base := strings.ToLower(strings.TrimSpace(baseRole))
+	frag := strings.ToLower(strings.TrimSpace(fragRole))
+	if base == RoleAgentProxy && (frag == RoleGateway || frag == "xconnect-gateway") {
+		return false
+	}
+	if frag != "" && frag != base {
+		return false
+	}
+	return true
+}
+
+func mergeConfig(dst *Config, src Config) {
+	setIfNonEmpty(&dst.Mode, src.Mode)
+	setIfNonEmpty(&dst.Log.Level, src.Log.Level)
+
+	setIfNonEmpty(&dst.Agent.OverlayStatusPath, src.Agent.OverlayStatusPath)
+	setIfNonEmpty(&dst.Agent.Role, src.Agent.Role)
+	setIfNonEmpty(&dst.Agent.ID, src.Agent.ID)
+	setIfNonEmpty(&dst.Agent.NodeID, src.Agent.NodeID)
+	setIfNonEmpty(&dst.Agent.NetworkID, src.Agent.NetworkID)
+	setIfNonEmpty(&dst.Agent.Region, src.Agent.Region)
+	setIfNonEmpty(&dst.Agent.Pool, src.Agent.Pool)
+	setIfNonEmpty(&dst.Agent.ResourceClass, src.Agent.ResourceClass)
+	setIfNonEmpty(&dst.Agent.EntryPoint, src.Agent.EntryPoint)
+	if src.Agent.OpenToUsers != nil {
+		v := *src.Agent.OpenToUsers
+		dst.Agent.OpenToUsers = &v
+	}
+	setIfNonEmpty(&dst.Agent.Provider, src.Agent.Provider)
+	setIfNonEmpty(&dst.Agent.Product, src.Agent.Product)
+	setIfNonEmpty(&dst.Agent.LineCode, src.Agent.LineCode)
+	setIfNonEmpty(&dst.Agent.PricingGroup, src.Agent.PricingGroup)
+	if src.Agent.StatsEnabled {
+		dst.Agent.StatsEnabled = true
+	}
+	setIfNonEmpty(&dst.Agent.ControllerURL, src.Agent.ControllerURL)
+	setIfNonEmpty(&dst.Agent.APIToken, src.Agent.APIToken)
+	setIfNonEmpty(&dst.Agent.Domain, src.Agent.Domain)
+	if src.Agent.HTTPTimeout > 0 {
+		dst.Agent.HTTPTimeout = src.Agent.HTTPTimeout
+	}
+	if src.Agent.StatusInterval > 0 {
+		dst.Agent.StatusInterval = src.Agent.StatusInterval
+	}
+	if src.Agent.SyncInterval > 0 {
+		dst.Agent.SyncInterval = src.Agent.SyncInterval
+	}
+	if src.Agent.TLS.InsecureSkipVerify {
+		dst.Agent.TLS.InsecureSkipVerify = true
 	}
 
+	if src.Xray.Sync.Enabled {
+		dst.Xray.Sync.Enabled = true
+	}
+	if src.Xray.Sync.Interval > 0 {
+		dst.Xray.Sync.Interval = src.Xray.Sync.Interval
+	}
+	if len(src.Xray.Sync.Targets) > 0 {
+		dst.Xray.Sync.Targets = append([]SyncTarget(nil), src.Xray.Sync.Targets...)
+	}
+	setIfNonEmpty(&dst.Xray.Sync.OutputPath, src.Xray.Sync.OutputPath)
+	setIfNonEmpty(&dst.Xray.Sync.TemplatePath, src.Xray.Sync.TemplatePath)
+	if len(src.Xray.Sync.ValidateCommand) > 0 {
+		dst.Xray.Sync.ValidateCommand = append([]string(nil), src.Xray.Sync.ValidateCommand...)
+	}
+	if len(src.Xray.Sync.RestartCommand) > 0 {
+		dst.Xray.Sync.RestartCommand = append([]string(nil), src.Xray.Sync.RestartCommand...)
+	}
+
+	if src.Billing.Enabled {
+		dst.Billing.Enabled = true
+	}
+	setIfNonEmpty(&dst.Billing.BaseURL, src.Billing.BaseURL)
+	if src.Billing.HTTPTimeout > 0 {
+		dst.Billing.HTTPTimeout = src.Billing.HTTPTimeout
+	}
+	if src.Billing.CollectInterval > 0 {
+		dst.Billing.CollectInterval = src.Billing.CollectInterval
+	}
+	if src.Billing.ReconcileInterval > 0 {
+		dst.Billing.ReconcileInterval = src.Billing.ReconcileInterval
+	}
+}
+
+func setIfNonEmpty(dst *string, val string) {
+	if strings.TrimSpace(val) != "" {
+		*dst = val
+	}
+}
+
+func applyEnvAndValidate(cfg *Config) error {
 	if authURL := os.Getenv("AuthUrl"); authURL != "" {
 		cfg.Agent.ControllerURL = authURL
 	}
@@ -144,8 +299,8 @@ func LoadReader(r io.Reader) (*Config, error) {
 		cfg.Agent.Role = role
 	}
 	if err := cfg.Agent.ValidateRole(); err != nil {
-		return nil, err
+		return err
 	}
 
-	return &cfg, nil
+	return nil
 }

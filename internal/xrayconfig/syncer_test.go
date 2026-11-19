@@ -333,3 +333,93 @@ func TestCLIUserAdderValidatesXrayResult(t *testing.T) {
 		t.Fatalf("add users: %v", err)
 	}
 }
+
+type mutablePolicyClientSource struct {
+	clients []Client
+	policy  *RoutingPolicy
+}
+
+func (s *mutablePolicyClientSource) ListClients(context.Context) ([]Client, error) {
+	return append([]Client(nil), s.clients...), nil
+}
+
+func (s *mutablePolicyClientSource) ListClientsWithPolicy(context.Context) ([]Client, *RoutingPolicy, error) {
+	return append([]Client(nil), s.clients...), s.policy, nil
+}
+
+func TestPeriodicSyncerRestartsXrayOnRoutingPolicyChange(t *testing.T) {
+	first := Client{ID: "client-1", Email: "first@example.com", Flow: DefaultFlow}
+	second := Client{ID: "client-2", Email: "second@example.com", Flow: DefaultFlow}
+	source := &mutablePolicyClientSource{
+		clients: []Client{first},
+		policy:  &RoutingPolicy{Revision: "rp-1", PoolTag: RoutingPoolMedia},
+	}
+	adder := &recordingUserAdder{}
+	restarts := 0
+	outputPath := t.TempDir() + "/config.json"
+
+	syncer, err := NewPeriodicSyncer(PeriodicOptions{
+		Interval: time.Minute,
+		Source:   source,
+		Generator: Generator{
+			Definition: DefaultDefinition(),
+			OutputPath: outputPath,
+		},
+		RestartCommand: []string{"restart-xray"},
+		Runner: func(context.Context, []string) ([]byte, error) {
+			restarts++
+			return nil, nil
+		},
+		UserAdder: adder,
+	})
+	if err != nil {
+		t.Fatalf("new syncer: %v", err)
+	}
+
+	// Bootstrap sync.
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatalf("bootstrap sync: %v", err)
+	}
+	if restarts != 1 {
+		t.Fatalf("bootstrap restarts = %d, want 1", restarts)
+	}
+
+	// Changing routing policy with unchanged clients must write full config and restart Xray.
+	source.policy = &RoutingPolicy{Revision: "rp-2", PoolTag: RoutingPoolProEC2}
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatalf("policy change sync: %v", err)
+	}
+	if restarts != 2 {
+		t.Fatalf("policy change restarts = %d, want 2", restarts)
+	}
+	if len(adder.calls) != 0 {
+		t.Fatalf("policy change must not use hot-add, got %#v", adder.calls)
+	}
+	rendered, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(rendered), `"blocked-media-on-pro"`) {
+		t.Fatalf("expected Pro-EC2-Pool outbound in rendered config, got %s", rendered)
+	}
+
+	// Changing routing policy simultaneously with adding a client must still restart instead of add-only hot-add.
+	source.clients = []Client{first, second}
+	source.policy = &RoutingPolicy{Revision: "rp-3", PoolTag: RoutingPoolCustomDedicated}
+	if _, err := syncer.sync(context.Background()); err != nil {
+		t.Fatalf("policy + client add sync: %v", err)
+	}
+	if restarts != 3 {
+		t.Fatalf("policy + client add restarts = %d, want 3", restarts)
+	}
+	if len(adder.calls) != 0 {
+		t.Fatalf("policy + client add must restart rather than hot-add, got %#v", adder.calls)
+	}
+	rendered, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if strings.Contains(string(rendered), `"blocked-media-on-pro"`) {
+		t.Fatalf("expected Custom-Dedicated config to remove blocked-media-on-pro, got %s", rendered)
+	}
+}

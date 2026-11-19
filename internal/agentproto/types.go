@@ -6,15 +6,20 @@ import (
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/xrayconfig"
 )
 
+// RoutingPolicy represents controller-managed traffic routing rules and pool
+// assignment for an edge node.
+type RoutingPolicy = xrayconfig.RoutingPolicy
+
 // ClientListResponse represents the payload returned by the controller when an
 // agent requests the latest set of Xray clients.
 //
 // Refactored for xconnect-edge-agent to avoid cross-module dependency on account.
 type ClientListResponse struct {
-	Clients     []xrayconfig.Client `json:"clients"`
-	Total       int                 `json:"total"`
-	GeneratedAt time.Time           `json:"generatedAt"`
-	Revision    string              `json:"revision,omitempty"`
+	Clients       []xrayconfig.Client `json:"clients"`
+	Total         int                 `json:"total"`
+	GeneratedAt   time.Time           `json:"generatedAt"`
+	Revision      string              `json:"revision,omitempty"`
+	RoutingPolicy *RoutingPolicy      `json:"routingPolicy,omitempty"`
 }
 
 // StatusReport captures the runtime state of an agent and the managed Xray

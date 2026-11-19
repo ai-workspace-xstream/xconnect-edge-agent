@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,13 @@ import (
 // ClientSource provides the list of active Xray clients to encode in the config.
 type ClientSource interface {
 	ListClients(ctx context.Context) ([]Client, error)
+}
+
+// PolicyClientSource is an optional extension of ClientSource that also
+// provides a controller-assigned routing policy.
+type PolicyClientSource interface {
+	ClientSource
+	ListClientsWithPolicy(ctx context.Context) ([]Client, *RoutingPolicy, error)
 }
 
 type commandRunner func(ctx context.Context, cmd []string) ([]byte, error)
@@ -53,10 +61,11 @@ type PeriodicSyncer struct {
 	onSync          func(SyncResult)
 	trigger         chan struct{}
 
-	mu          sync.Mutex
-	syncMu      sync.Mutex
-	lastHash    string
-	lastClients []Client
+	mu                sync.Mutex
+	syncMu            sync.Mutex
+	lastHash          string
+	lastNonClientHash string
+	lastClients       []Client
 }
 
 // SyncResult describes the outcome of a synchronization attempt.
@@ -184,20 +193,39 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
 
-	clients, err := s.source.ListClients(ctx)
+	var (
+		clients []Client
+		policy  *RoutingPolicy
+		err     error
+	)
+	if policySource, ok := s.source.(PolicyClientSource); ok {
+		clients, policy, err = policySource.ListClientsWithPolicy(ctx)
+	} else {
+		clients, err = s.source.ListClients(ctx)
+	}
 	if err != nil {
 		return 0, fmt.Errorf("list clients: %w", err)
 	}
 
-	renderedBuf, err := s.generator.Render(clients)
+	gen := s.generator
+	if policy != nil {
+		gen.RoutingPolicy = policy
+	}
+
+	renderedBuf, err := gen.Render(clients)
 	if err != nil {
 		return 0, fmt.Errorf("render config: %w", err)
 	}
 
 	currentHash := sha256Hex(renderedBuf)
+	currentNonClientHash, err := nonClientConfigHash(renderedBuf)
+	if err != nil {
+		return 0, fmt.Errorf("hash non-client config: %w", err)
+	}
 
 	s.mu.Lock()
 	previousHash := s.lastHash
+	previousNonClientHash := s.lastNonClientHash
 	s.mu.Unlock()
 
 	if previousHash != "" && currentHash == previousHash {
@@ -206,7 +234,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		return len(clients), nil
 	}
 
-	if err := s.generator.Generate(clients); err != nil {
+	if err := gen.Generate(clients); err != nil {
 		return 0, fmt.Errorf("generate config: %w", err)
 	}
 
@@ -217,9 +245,9 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 	}
 
 	// The first sync bootstraps the API/tagged inbound through the configured
-	// restart path. Pure additions use HandlerService. A removal must restart
-	// only this Xray target: RemoveUser only blocks future authentication and
-	// cannot terminate a session that has already authenticated.
+	// restart path. Non-client changes (routing, policy, outbounds, sniffing)
+	// and client withdrawals require a full restart. Pure additions use
+	// HandlerService.
 	s.mu.Lock()
 	previousClients := append([]Client(nil), s.lastClients...)
 	s.mu.Unlock()
@@ -231,7 +259,15 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 		}
 	} else {
 		added, removed := clientDelta(previousClients, clients)
-		if len(removed) > 0 {
+		if currentNonClientHash != previousNonClientHash {
+			if len(s.restartCommand) == 0 {
+				if len(removed) > 0 {
+					return 0, errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
+				}
+			} else if err := s.runCommand(ctx, s.restartCommand, "restart xray after config change"); err != nil {
+				return 0, err
+			}
+		} else if len(removed) > 0 {
 			if len(s.restartCommand) == 0 {
 				return 0, errors.New("restart command is required to disconnect established xray sessions after client withdrawal")
 			}
@@ -242,7 +278,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 			if s.userAdder == nil {
 				return 0, errors.New("dynamic xray user addition is required for client restoration")
 			}
-			if err := s.userAdder.AddUsers(ctx, s.generator, added); err != nil {
+			if err := s.userAdder.AddUsers(ctx, gen, added); err != nil {
 				return 0, fmt.Errorf("add xray users: %w", err)
 			}
 		}
@@ -250,6 +286,7 @@ func (s *PeriodicSyncer) sync(ctx context.Context) (int, error) {
 
 	s.mu.Lock()
 	s.lastHash = currentHash
+	s.lastNonClientHash = currentNonClientHash
 	s.lastClients = append([]Client(nil), clients...)
 	s.mu.Unlock()
 
@@ -307,6 +344,50 @@ func defaultCommandRunner(ctx context.Context, cmd []string) ([]byte, error) {
 	}
 	c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 	return c.CombinedOutput()
+}
+
+func nonClientConfigHash(rendered []byte) (string, error) {
+	var root map[string]interface{}
+	if err := json.Unmarshal(rendered, &root); err != nil {
+		return "", err
+	}
+	if inbounds, ok := root["inbounds"].([]interface{}); ok {
+		for _, raw := range inbounds {
+			inbound, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if settings, ok := inbound["settings"].(map[string]interface{}); ok {
+				if _, exists := settings["clients"]; exists {
+					settings["clients"] = []interface{}{}
+				}
+			}
+		}
+	}
+	if outbounds, ok := root["outbounds"].([]interface{}); ok {
+		for _, raw := range outbounds {
+			outbound, ok := raw.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			if settings, ok := outbound["settings"].(map[string]interface{}); ok {
+				if vnext, ok := settings["vnext"].([]interface{}); ok {
+					for _, rawVN := range vnext {
+						if vn, ok := rawVN.(map[string]interface{}); ok {
+							if _, exists := vn["users"]; exists {
+								vn["users"] = []interface{}{}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	normalized, err := json.Marshal(root)
+	if err != nil {
+		return "", err
+	}
+	return sha256Hex(normalized), nil
 }
 
 func sha256Hex(b []byte) string {

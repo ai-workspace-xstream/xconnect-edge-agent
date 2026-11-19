@@ -22,12 +22,19 @@ func NewHTTPClientSource(client *Client, tracker *syncTracker) *HTTPClientSource
 // ListClients implements xrayconfig.ClientSource by fetching the latest client
 // list via the controller API.
 func (s *HTTPClientSource) ListClients(ctx context.Context) ([]xrayconfig.Client, error) {
+	clients, _, err := s.ListClientsWithPolicy(ctx)
+	return clients, err
+}
+
+// ListClientsWithPolicy implements xrayconfig.PolicyClientSource by returning
+// both the latest client list and any controller-provided routing policy.
+func (s *HTTPClientSource) ListClientsWithPolicy(ctx context.Context) ([]xrayconfig.Client, *xrayconfig.RoutingPolicy, error) {
 	resp, err := s.client.ListClients(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if s.tracker != nil {
 		s.tracker.UpdateFetch(len(resp.Clients), resp.Revision, time.Now().UTC())
 	}
-	return resp.Clients, nil
+	return resp.Clients, resp.RoutingPolicy, nil
 }
