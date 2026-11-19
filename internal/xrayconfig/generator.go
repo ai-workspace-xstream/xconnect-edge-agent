@@ -461,9 +461,12 @@ func buildTierOutboundsAndRules(pool string, policy *RoutingPolicy) ([]interface
 
 	switch pool {
 	case RoutingPoolProEC2:
-		mediaOutbound := "blocked-media-on-pro"
-		if policy != nil && strings.EqualFold(strings.TrimSpace(policy.MediaOnProAction), "allow") {
-			mediaOutbound = "pool-pro-unclassified"
+		mediaOutbound := "pool-pro-unclassified"
+		if policy != nil {
+			action := strings.ToLower(strings.TrimSpace(policy.MediaOnProAction))
+			if action == "blackhole" || action == "block" {
+				mediaOutbound = "blocked-media-on-pro"
+			}
 		}
 		outbounds := []interface{}{
 			freedomOutbound("pool-pro-unclassified"),
