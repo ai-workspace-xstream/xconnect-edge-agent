@@ -24,7 +24,10 @@ import (
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
 )
 
-const defaultGatewayStateDir = "/var/lib/xconnect-gateway"
+const (
+	defaultGatewayStateDir         = "/var/lib/xconnect-gateway"
+	gatewaySignedConfigV2MediaType = "application/vnd.xconnect.gateway-config.v2+json"
+)
 
 type gatewayDeviceCredential struct {
 	CredentialID string    `json:"credential_id,omitempty"`
@@ -92,6 +95,26 @@ type gatewayRelaySpec struct {
 	Peers []gatewayRelayPeer `json:"peers"`
 }
 
+type gatewayPolicyArtifact struct {
+	SchemaVersion   int                 `json:"schema_version"`
+	CompilerVersion string              `json:"compiler_version"`
+	NetworkID       string              `json:"network_id"`
+	Revision        uint64              `json:"revision"`
+	DefaultAction   string              `json:"default_action"`
+	ProtectedFlows  []string            `json:"protected_flows"`
+	Rules           []gatewayPolicyRule `json:"rules"`
+}
+
+type gatewayPolicyRule struct {
+	WholeDevice        bool     `json:"whole_device,omitempty"`
+	ID                 string   `json:"id"`
+	Action             string   `json:"action"`
+	SourceDevices      []string `json:"source_devices"`
+	DestinationDevices []string `json:"destination_devices"`
+	Protocols          []string `json:"protocols"`
+	Ports              []int    `json:"ports"`
+}
+
 type gatewaySignature struct {
 	Algorithm string `json:"algorithm"`
 	KeyID     string `json:"key_id"`
@@ -99,6 +122,27 @@ type gatewaySignature struct {
 }
 
 type gatewaySignedConfig struct {
+	SchemaVersion  int                    `json:"schema_version"`
+	Role           string                 `json:"role"`
+	ConfigID       string                 `json:"config_id"`
+	NetworkID      string                 `json:"network_id"`
+	GatewayID      string                 `json:"gateway_id"`
+	Generation     uint64                 `json:"generation"`
+	IssuedAt       time.Time              `json:"issued_at"`
+	ExpiresAt      time.Time              `json:"expires_at"`
+	ConnectionMode string                 `json:"connection_mode,omitempty"`
+	InterfaceName  string                 `json:"interface_name"`
+	Address        string                 `json:"address"`
+	ListenPort     int                    `json:"listen_port"`
+	MTU            int                    `json:"mtu"`
+	Peers          []gatewayPeer          `json:"peers"`
+	Transport      gatewayTransport       `json:"transport"`
+	Mesh           *gatewayRelaySpec      `json:"mesh,omitempty"`
+	Policy         *gatewayPolicyArtifact `json:"policy,omitempty"`
+	Signature      gatewaySignature       `json:"signature"`
+}
+
+type gatewaySignedConfigPayloadV1 struct {
 	SchemaVersion  int               `json:"schema_version"`
 	Role           string            `json:"role"`
 	ConfigID       string            `json:"config_id"`
@@ -115,59 +159,67 @@ type gatewaySignedConfig struct {
 	Peers          []gatewayPeer     `json:"peers"`
 	Transport      gatewayTransport  `json:"transport"`
 	Mesh           *gatewayRelaySpec `json:"mesh,omitempty"`
-	Signature      gatewaySignature  `json:"signature"`
+}
+
+func (c gatewaySignedConfig) payloadV1() gatewaySignedConfigPayloadV1 {
+	return gatewaySignedConfigPayloadV1{
+		SchemaVersion:  c.SchemaVersion,
+		Role:           c.Role,
+		ConfigID:       c.ConfigID,
+		NetworkID:      c.NetworkID,
+		GatewayID:      c.GatewayID,
+		Generation:     c.Generation,
+		IssuedAt:       c.IssuedAt,
+		ExpiresAt:      c.ExpiresAt,
+		ConnectionMode: strings.TrimSpace(c.ConnectionMode),
+		InterfaceName:  c.InterfaceName,
+		Address:        c.Address,
+		ListenPort:     c.ListenPort,
+		MTU:            c.MTU,
+		Peers:          c.Peers,
+		Transport:      c.Transport,
+		Mesh:           c.Mesh,
+	}
 }
 
 func (c gatewaySignedConfig) signingBytes() ([]byte, error) {
+	base := c.payloadV1()
+	if c.SchemaVersion == 1 {
+		return json.Marshal(base)
+	}
 	return json.Marshal(struct {
-		SchemaVersion  int               `json:"schema_version"`
-		Role           string            `json:"role"`
-		ConfigID       string            `json:"config_id"`
-		NetworkID      string            `json:"network_id"`
-		GatewayID      string            `json:"gateway_id"`
-		Generation     uint64            `json:"generation"`
-		IssuedAt       time.Time         `json:"issued_at"`
-		ExpiresAt      time.Time         `json:"expires_at"`
-		ConnectionMode string            `json:"connection_mode,omitempty"`
-		InterfaceName  string            `json:"interface_name"`
-		Address        string            `json:"address"`
-		ListenPort     int               `json:"listen_port"`
-		MTU            int               `json:"mtu"`
-		Peers          []gatewayPeer     `json:"peers"`
-		Transport      gatewayTransport  `json:"transport"`
-		Mesh           *gatewayRelaySpec `json:"mesh,omitempty"`
+		gatewaySignedConfigPayloadV1
+		Policy *gatewayPolicyArtifact `json:"policy,omitempty"`
 	}{
-		c.SchemaVersion,
-		c.Role,
-		c.ConfigID,
-		c.NetworkID,
-		c.GatewayID,
-		c.Generation,
-		c.IssuedAt,
-		c.ExpiresAt,
-		strings.TrimSpace(c.ConnectionMode),
-		c.InterfaceName,
-		c.Address,
-		c.ListenPort,
-		c.MTU,
-		c.Peers,
-		c.Transport,
-		c.Mesh,
+		gatewaySignedConfigPayloadV1: base,
+		Policy:                       c.Policy,
 	})
 }
 
 func (c gatewaySignedConfig) Verify(keys []gatewaySigningKey, now time.Time) error {
-	if c.ConfigID == "" || c.NetworkID == "" || c.GatewayID == "" || c.Generation == 0 ||
+	if (c.SchemaVersion != 0 && c.SchemaVersion != 1 && c.SchemaVersion != 2) ||
+		c.ConfigID == "" || c.NetworkID == "" || c.GatewayID == "" || c.Generation == 0 ||
 		c.Signature.Algorithm != "Ed25519" || !c.ExpiresAt.After(now) ||
 		(!c.IssuedAt.IsZero() && c.IssuedAt.After(now.Add(30*time.Second))) {
 		return errors.New("invalid gateway signed config")
+	}
+	if c.SchemaVersion != 2 && c.Policy != nil {
+		return errors.New("gateway policy requires schema version 2")
+	}
+	if c.SchemaVersion == 2 && c.Policy != nil {
+		if strings.TrimSpace(c.Policy.NetworkID) == "" || c.Policy.NetworkID != c.NetworkID {
+			return errors.New("gateway policy network mismatch")
+		}
+		if c.Policy.DefaultAction != "deny" && c.Policy.DefaultAction != "allow" {
+			return errors.New("invalid gateway policy default action")
+		}
 	}
 	payload, err := c.signingBytes()
 	if err != nil {
 		return err
 	}
 	var legacyPayload []byte
-	if strings.TrimSpace(c.ConnectionMode) != "" {
+	if c.SchemaVersion <= 1 && strings.TrimSpace(c.ConnectionMode) != "" {
 		legacy := c
 		legacy.ConnectionMode = ""
 		legacyPayload, _ = legacy.signingBytes()
@@ -420,6 +472,18 @@ func (s *gatewayControlSyncer) SyncOnce(ctx context.Context) error {
 		return err
 	}
 
+	if s.logger != nil && cfg.Policy != nil {
+		s.logger.Info("gateway control-plane sync succeeded",
+			"schema_version", cfg.SchemaVersion,
+			"config_id", cfg.ConfigID,
+			"generation", cfg.Generation,
+			"peers", len(cfg.Peers),
+			"policy_revision", cfg.Policy.Revision,
+			"policy_default", cfg.Policy.DefaultAction,
+			"policy_rules", len(cfg.Policy.Rules),
+		)
+	}
+
 	if s.tracker != nil {
 		completedAt := time.Now().UTC()
 		s.tracker.UpdateFetch(len(cfg.Peers), fmt.Sprint(cfg.Generation), completedAt)
@@ -533,7 +597,7 @@ func (s *gatewayControlSyncer) renewSession(ctx context.Context, baseURL *url.UR
 
 func (s *gatewayControlSyncer) fetchSignedConfig(ctx context.Context, baseURL *url.URL, enrollmentToken string) (gatewaySignedConfig, error) {
 	var out gatewaySignedConfig
-	err := s.doJSON(ctx, baseURL, http.MethodGet, "/api/overlay/v1/gateway/signed-config", "Bearer "+enrollmentToken, nil, &out)
+	err := s.doJSONWithAccept(ctx, baseURL, http.MethodGet, "/api/overlay/v1/gateway/signed-config", "Bearer "+enrollmentToken, gatewaySignedConfigV2MediaType+", application/json", nil, &out)
 	return out, err
 }
 
@@ -557,6 +621,10 @@ func (s *gatewayControlSyncer) ackSignedConfig(ctx context.Context, baseURL *url
 }
 
 func (s *gatewayControlSyncer) doJSON(ctx context.Context, baseURL *url.URL, method, path, authorization string, input, output any) error {
+	return s.doJSONWithAccept(ctx, baseURL, method, path, authorization, "application/json", input, output)
+}
+
+func (s *gatewayControlSyncer) doJSONWithAccept(ctx context.Context, baseURL *url.URL, method, path, authorization, accept string, input, output any) error {
 	endpoint, err := url.JoinPath(baseURL.String(), path)
 	if err != nil {
 		return err
@@ -573,7 +641,10 @@ func (s *gatewayControlSyncer) doJSON(ctx context.Context, baseURL *url.URL, met
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Accept", "application/json")
+	if strings.TrimSpace(accept) == "" {
+		accept = "application/json"
+	}
+	req.Header.Set("Accept", accept)
 	req.Header.Set("User-Agent", buildUserAgent(s.agent.ID))
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
