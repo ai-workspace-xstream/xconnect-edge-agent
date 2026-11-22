@@ -58,9 +58,9 @@ setup_proxy_self_update() {
   tmp="$(mktemp "${TMPDIR:-/tmp}/setup-proxy.XXXXXX")"
   printf "%s" "$body" > "$tmp"
   chmod 0700 "$tmp"
-  AGENT_SETUP_PROXY_UPDATED=1 exec bash "$tmp" "$"
+  AGENT_SETUP_PROXY_UPDATED=1 exec bash "$tmp" ${1+"$@"}
 }
-setup_proxy_self_update
+setup_proxy_self_update "$@"
 operation="${AGENT_PROXY_OPERATION:-deploy}"
 domain="${AGENT_PROXY_DOMAIN:-}"
 entry="${AGENT_ENTRY_POINT:-}"
