@@ -102,13 +102,24 @@ while (($#)); do
   esac
 done
 
+resolve_repo_head_sha() {
+  local repo="$1" sha=""
+  if command -v git >/dev/null 2>&1; then
+    sha="$(git ls-remote "https://github.com/${repo}.git" HEAD 2>/dev/null | awk '{print $1}' || true)"
+  fi
+  if [[ ! "$sha" =~ ^[a-f0-9]{40}$ ]]; then
+    sha="$(curl -fsSL --max-time 15 -H 'Accept: application/vnd.github.sha' "https://api.github.com/repos/${repo}/commits/HEAD" 2>/dev/null || true)"
+  fi
+  printf '%s' "$sha"
+}
+
 playbooks_ref="${AGENT_PLAYBOOKS_REF:-}"
 gitops_ref="${AGENT_GITOPS_REF:-}"
 if [[ -z "$playbooks_ref" ]]; then
-  playbooks_ref="$(git ls-remote https://github.com/ai-workspace-infra/playbooks.git HEAD 2>/dev/null | awk '{print $1}' || echo "")"
+  playbooks_ref="$(resolve_repo_head_sha ai-workspace-infra/playbooks)"
 fi
 if [[ -z "$gitops_ref" ]]; then
-  gitops_ref="$(git ls-remote https://github.com/ai-workspace-infra/gitops.git HEAD 2>/dev/null | awk '{print $1}' || echo "")"
+  gitops_ref="$(resolve_repo_head_sha ai-workspace-infra/gitops)"
 fi
 [[ "$playbooks_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_PLAYBOOKS_REF must be a full commit SHA'
 [[ "$gitops_ref" =~ ^[a-f0-9]{40}$ ]] || die 'AGENT_GITOPS_REF must be a full commit SHA'
@@ -216,8 +227,13 @@ if [[ "$observability" == true || "$observability" == 1 || "$observability" == y
       obs_vault_path="${AGENT_PROXY_VECTOR_VAULT_KV_PATH:-${VAULT_OBSERVABILITY_SECRET_PATH:-kv/data/CICD/observability}}"
       resp="$(curl -fsSL -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR%/}/v1/${obs_vault_path#/}" 2>/dev/null || true)"
       if [[ -n "$resp" ]]; then
-        export VECTOR_AUTH_USER="$(echo "$resp" | jq -r '.data.data.user // empty' 2>/dev/null || true)"
-        export VECTOR_AUTH_PASSWORD="$(echo "$resp" | jq -r '.data.data.password // empty' 2>/dev/null || true)"
+        if command -v jq >/dev/null 2>&1; then
+          export VECTOR_AUTH_USER="$(echo "$resp" | jq -r '.data.data.user // empty' 2>/dev/null || true)"
+          export VECTOR_AUTH_PASSWORD="$(echo "$resp" | jq -r '.data.data.password // empty' 2>/dev/null || true)"
+        elif command -v python3 >/dev/null 2>&1; then
+          export VECTOR_AUTH_USER="$(printf '%s' "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('user',''))" 2>/dev/null || true)"
+          export VECTOR_AUTH_PASSWORD="$(printf '%s' "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('data',{}).get('password',''))" 2>/dev/null || true)"
+        fi
       fi
     fi
   fi
