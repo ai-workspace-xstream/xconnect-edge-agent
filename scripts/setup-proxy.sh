@@ -6,12 +6,13 @@ usage() {
 Usage: setup-proxy.sh [--operation deploy|standalone|upgrade|print-arch] [options]
 Options: --node DOMAIN --entry-point DOMAIN --region CODE --pool NAME
          --resource-class CLASS --team-id ID --proxy-engine ENGINE
-         --gateway-domain DOMAIN --gateway-socket PATH
+         --with-xconnect-gateway --gateway-domain DOMAIN --gateway-socket PATH
          --runtime systemd|container [--container|--non-container]
          --with-observability --open-stunnel-5443 -h|--help
 Engines: fluxgate (default) | haproxy | caddy
 Runtimes: systemd (default, bare-metal service) | container (Kubernetes Helm chart)
-Inputs may also be provided through the corresponding AGENT_* or XCONNECT_GATEWAY_* environment variables.
+Inputs may also be provided through the corresponding AGENT_* or XCONNECT_GATEWAY_*
+(for example XCONNECT_GATEWAY_DOMAIN) environment variables.
 Vault credentials must be supplied in the process environment and are never persisted.
 EOF
 }
@@ -72,6 +73,12 @@ proxy_engine="${AGENT_PROXY_ENGINE:-fluxgate}"
 runtime="${AGENT_RUNTIME:-systemd}"
 observability="${INSTALL_OBSERVABILITY:-false}"
 stunnel="${OPEN_STUNNEL_5443:-false}"
+xconnect_gateway="${XCONNECT_GATEWAY_ENABLED:-${INSTALL_XCONNECT_GATEWAY:-false}}"
+gateway_domain="${XCONNECT_GATEWAY_DOMAIN:-}"
+gateway_socket="${XCONNECT_GATEWAY_LISTEN_SOCKET:-${XCONNECT_GATEWAY_SOCKET:-/run/xconnect-gateway/xray.sock}}"
+gateway_id="${XCONNECT_GATEWAY_ID:-}"
+gateway_network_id="${XCONNECT_GATEWAY_NETWORK_ID:-}"
+gateway_state_dir="${XCONNECT_GATEWAY_STATE_DIR:-/var/lib/xconnect-gateway}"
 
 while (($#)); do
   case "$1" in
@@ -91,6 +98,11 @@ while (($#)); do
     --team-id=*) team="${1#*=}"; shift ;;
     --proxy-engine) (($# > 1)) || die "$1 requires a value"; proxy_engine="$2"; shift 2 ;;
     --proxy-engine=*) proxy_engine="${1#*=}"; shift ;;
+    --with-xconnect-gateway) xconnect_gateway=true; shift ;;
+    --gateway-domain) (($# > 1)) || die "$1 requires a value"; gateway_domain="$2"; xconnect_gateway=true; shift 2 ;;
+    --gateway-domain=*) gateway_domain="${1#*=}"; xconnect_gateway=true; shift ;;
+    --gateway-socket) (($# > 1)) || die "$1 requires a value"; gateway_socket="$2"; shift 2 ;;
+    --gateway-socket=*) gateway_socket="${1#*=}"; shift ;;
     --runtime) (($# > 1)) || die "$1 requires a value"; runtime="$2"; shift 2 ;;
     --runtime=*) runtime="${1#*=}"; shift ;;
     --container) runtime="container"; shift ;;
@@ -101,6 +113,18 @@ while (($#)); do
     *) die "unknown argument: $1" ;;
   esac
 done
+
+if [[ "$xconnect_gateway" == true || "$xconnect_gateway" == 1 || "$xconnect_gateway" == yes ]]; then
+  xconnect_gateway=true
+else
+  xconnect_gateway=false
+fi
+if [[ "$xconnect_gateway" == true ]]; then
+  [[ -n "$gateway_domain" ]] || die '--with-xconnect-gateway requires --gateway-domain or XCONNECT_GATEWAY_DOMAIN'
+  [[ "$gateway_domain" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$ ]] || die 'XCONNECT_GATEWAY_DOMAIN must be a valid hostname'
+  [[ "$gateway_socket" == /* ]] || die 'XCONNECT_GATEWAY_LISTEN_SOCKET must be an absolute path'
+  gateway_id="${gateway_id:-${gateway_domain%%.*}}"
+fi
 
 resolve_repo_head_sha() {
   local repo="$1" sha=""
@@ -151,6 +175,13 @@ export AGENT_PROXY_OBSERVABILITY_ENABLED="$observability"
 export AGENT_CONTROLLER_URL="${AGENT_CONTROLLER_URL:-${AUTH_URL:-${ACCOUNTS_URL:-}}}"
 export BILLING_SERVICE_BASE_URL="${BILLING_SERVICE_BASE_URL:-${BILLING_SERVICE_URL:-}}"
 export AGENT_REPO_URL="${AGENT_REPO_URL:-https://github.com/${GITHUB_REPO:-ai-workspace-xstream/xconnect-edge-agent}.git}"
+export XCONNECT_GATEWAY_ENABLED="$xconnect_gateway"
+export XCONNECT_GATEWAY_DOMAIN="$gateway_domain"
+export XCONNECT_GATEWAY_LISTEN_SOCKET="$gateway_socket"
+export XCONNECT_GATEWAY_SOCKET="$gateway_socket"
+export XCONNECT_GATEWAY_ID="$gateway_id"
+export XCONNECT_GATEWAY_NETWORK_ID="$gateway_network_id"
+export XCONNECT_GATEWAY_STATE_DIR="$gateway_state_dir"
 [[ -z "${VAULT_TLS_SECRET_PATH:-}" ]] || export AGENT_PROXY_VAULT_TLS_ENABLED=true
 
 if [[ "$runtime" == "container" || "$runtime" == "k8s" ]]; then
@@ -171,6 +202,9 @@ if [[ "$runtime" == "container" || "$runtime" == "k8s" ]]; then
     --set "ingress.provider=${AGENT_PROXY_ENGINE}"
     --set "observability.enabled=${observability}"
   )
+  if [[ "$xconnect_gateway" == true ]]; then
+    helm_args+=(--set "gateway.enabled=true" --set "gateway.domain=${XCONNECT_GATEWAY_DOMAIN}")
+  fi
   if [[ -n "${INTERNAL_SERVICE_TOKEN:-}" ]]; then
     helm_args+=(--set "security.internalServiceToken=${INTERNAL_SERVICE_TOKEN}")
   fi
@@ -246,4 +280,4 @@ curl -fsSL --retry 3 --connect-timeout 15 --max-time 180 \
   | tar -xz -C "$work" --strip-components=1
 printf 'Using Playbooks commit %s and GitOps commit %s\n' "$playbooks_ref" "$gitops_ref"
 ANSIBLE_CONFIG="$work/ansible.cfg" ansible-playbook "$work/deploy_xray_proxy_server.yml" \
-  -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true agent_proxy_engine=$proxy_engine"
+  -i "$work/inventory.ini" -e "agent_service_hosts=$AGENT_ID agent_proxy_local_installer=true agent_proxy_engine=$proxy_engine xconnect_gateway_enabled=$xconnect_gateway"

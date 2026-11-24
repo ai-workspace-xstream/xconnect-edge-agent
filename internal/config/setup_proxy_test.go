@@ -19,6 +19,10 @@ func TestSetupProxyDelegatesHostOperationsToPlaybooks(t *testing.T) {
 		"ansible-playbook",
 		"AGENT_CONTROLLER_URL",
 		"BILLING_SERVICE_BASE_URL",
+		"--with-xconnect-gateway",
+		"--gateway-domain",
+		"--gateway-socket",
+		"XCONNECT_GATEWAY_DOMAIN",
 	} {
 		if !strings.Contains(content, required) {
 			t.Fatalf("missing Playbooks installer contract: %s", required)
