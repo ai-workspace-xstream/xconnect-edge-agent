@@ -139,7 +139,7 @@ func isDDTraceEnabled(opts Options) bool {
 			return false
 		}
 	}
-	host := firstNonEmpty(os.Getenv("DD_AGENT_HOST"), opts.DDAgentHost)
+	host := firstNonEmpty(os.Getenv("DD_TRACE_AGENT_URL"), os.Getenv("DD_AGENT_HOST"), opts.DDAgentHost)
 	return host != ""
 }
 
@@ -218,7 +218,9 @@ func InitWithOptions(ctx context.Context, serviceVersion string, opts Options) (
 		startOpts := []tracer.StartOption{
 			tracer.WithService(svc),
 			tracer.WithEnv(envName),
-			tracer.WithAgentAddr(DDTraceAgentAddrWithOptions(opts)),
+		}
+		if strings.TrimSpace(os.Getenv("DD_TRACE_AGENT_URL")) == "" {
+			startOpts = append(startOpts, tracer.WithAgentAddr(DDTraceAgentAddrWithOptions(opts)))
 		}
 		if version := firstNonEmpty(os.Getenv("DD_VERSION"), serviceVersion); version != "" {
 			startOpts = append(startOpts, tracer.WithServiceVersion(version))
