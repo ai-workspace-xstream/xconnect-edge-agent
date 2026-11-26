@@ -4,6 +4,8 @@ log:
   level: info
 
 agent:
+  # Set the Linux host-facing interface to include byte counters in status reports.
+  # trafficInterface: eth0
   # Set per node: shared, free, plus, pro, or team (optional suggested teamId).
   # For the shared node, entryPoint may equal id/domain (for example jp-xconnect.svc.plus).
   region: ""
