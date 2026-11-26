@@ -8,9 +8,11 @@ all: build
 
 export PATH := $(PATH):/usr/local/go/bin
 
+GO_BUILD_TAGS ?=
+
 build:
 	/usr/local/go/bin/go mod tidy
-	/usr/local/go/bin/go build -o $(BINARY_NAME) ./cmd/agent
+	/usr/local/go/bin/go build -tags "$(GO_BUILD_TAGS)" -o $(BINARY_NAME) ./cmd/agent
 
 install: build
 	install -m 755 $(BINARY_NAME) $(INSTALL_BIN)

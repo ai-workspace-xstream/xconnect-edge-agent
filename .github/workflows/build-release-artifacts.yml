@@ -69,9 +69,10 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           GIT_COMMIT: ${{ needs.prep.outputs.git_commit_short }}
           BUILD_DATE: ${{ needs.prep.outputs.build_date }}
+          GO_BUILD_TAGS: ""
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w -X main.serviceName=xconnect-edge-agent -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" -o dist/xconnect-edge-agent ./cmd/agent
+          go build -tags "${GO_BUILD_TAGS}" -trimpath -ldflags="-s -w -X main.serviceName=xconnect-edge-agent -X main.gitCommit=${GIT_COMMIT} -X main.buildDate=${BUILD_DATE}" -o dist/xconnect-edge-agent ./cmd/agent
 
       # caddy-l4@v0.1.3 的 go.mod 声明 "go 1.26.9", 但该版本并不存在
       # (Go 官方 1.26 线只有 1.26.11)。这里取同一条线的最新补丁版本, 满足其

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/telemetry"
 )
 
 type BillingClient struct {
@@ -29,9 +31,9 @@ func NewBillingClient(baseURL string, timeout time.Duration) (*BillingClient, er
 	}
 	return &BillingClient{
 		baseURL: parsed,
-		http: &http.Client{
+		http: telemetry.WrapHTTPClient(&http.Client{
 			Timeout: timeout,
-		},
+		}),
 	}, nil
 }
 

@@ -53,3 +53,15 @@ xray:
           - "systemctl"
           - "restart"
           - "xray-tcp.service"
+
+telemetry:
+  provider: ""
+  serviceName: ""
+  env: ""
+  otel:
+    enabled: false
+    endpoint: ""
+  ddtrace:
+    enabled: false
+    agentHost: ""
+    agentPort: "9529"

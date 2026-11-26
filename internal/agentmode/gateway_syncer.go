@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/telemetry"
 )
 
 const (
@@ -330,10 +331,10 @@ func newGatewayControlSyncer(agent config.Agent, httpTimeout time.Duration, trac
 	return &gatewayControlSyncer{
 		agent:    agent,
 		stateDir: stateDir,
-		httpClient: &http.Client{
+		httpClient: telemetry.WrapHTTPClient(&http.Client{
 			Timeout:   httpTimeout,
 			Transport: transport,
-		},
+		}),
 		tracker: tracker,
 		logger:  logger.With("component", "gateway-control-sync"),
 	}, nil

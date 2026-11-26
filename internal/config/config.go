@@ -19,11 +19,12 @@ import (
 )
 
 type Config struct {
-	Mode    string  `yaml:"mode"`
-	Log     Log     `yaml:"log"`
-	Agent   Agent   `yaml:"agent"`
-	Xray    Xray    `yaml:"xray"`
-	Billing Billing `yaml:"billing"`
+	Mode      string    `yaml:"mode"`
+	Log       Log       `yaml:"log"`
+	Telemetry Telemetry `yaml:"telemetry"`
+	Agent     Agent     `yaml:"agent"`
+	Xray      Xray      `yaml:"xray"`
+	Billing   Billing   `yaml:"billing"`
 
 	// Flat top-level bootstrap fields for minimal 5-field config:
 	ID            string `yaml:"id"`
@@ -31,6 +32,27 @@ type Config struct {
 	ControllerURL string `yaml:"controllerUrl"`
 	APIToken      string `yaml:"apiToken"`
 	ResourceClass string `yaml:"resourceClass"`
+}
+
+type Telemetry struct {
+	Provider    string        `yaml:"provider"`
+	ServiceName string        `yaml:"serviceName"`
+	Env         string        `yaml:"env"`
+	OTel        OTelConfig    `yaml:"otel"`
+	DDTrace     DDTraceConfig `yaml:"ddtrace"`
+}
+
+type OTelConfig struct {
+	Enabled         *bool  `yaml:"enabled"`
+	Endpoint        string `yaml:"endpoint"`
+	TracesEndpoint  string `yaml:"tracesEndpoint"`
+	MetricsEndpoint string `yaml:"metricsEndpoint"`
+}
+
+type DDTraceConfig struct {
+	Enabled   *bool  `yaml:"enabled"`
+	AgentHost string `yaml:"agentHost"`
+	AgentPort string `yaml:"agentPort"`
 }
 
 type Log struct {

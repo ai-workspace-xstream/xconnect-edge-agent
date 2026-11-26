@@ -16,6 +16,7 @@ import (
 
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/agentproto"
 	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/config"
+	"github.com/ai-workspace-xstream/xconnect-edge-agent/internal/telemetry"
 )
 
 // ClientOptions configures the HTTP client used to communicate with the
@@ -80,10 +81,10 @@ func NewClient(baseURL, token string, opts ClientOptions) (*Client, error) {
 		transport = clone
 	}
 
-	client := &http.Client{
+	client := telemetry.WrapHTTPClient(&http.Client{
 		Timeout:   timeout,
 		Transport: transport,
-	}
+	})
 
 	userAgent := strings.TrimSpace(opts.UserAgent)
 	if userAgent == "" {

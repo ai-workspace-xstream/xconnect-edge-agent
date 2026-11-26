@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -34,23 +35,24 @@ func main() {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	shutdownTelemetry, telemetryErr := telemetry.Init(context.Background(), gitCommit)
+	configs, err := config.LoadAll(*configPath, *managedConfig)
+	if err != nil {
+		logger.Error("failed to load configuration", "path", *configPath, "err", err)
+		os.Exit(1)
+	}
+
+	telOpts := buildTelemetryOptions(configs)
+	shutdownTelemetry, telemetryErr := telemetry.InitWithOptions(context.Background(), gitCommit, telOpts)
 	if telemetryErr != nil {
-		logger.Warn("OpenTelemetry exporter initialization failed; continuing without export", "err", telemetryErr)
+		logger.Warn("telemetry exporter initialization failed; continuing without export", "err", telemetryErr)
 	} else {
 		defer func() {
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer shutdownCancel()
 			if err := shutdownTelemetry(shutdownCtx); err != nil {
-				logger.Warn("OpenTelemetry shutdown failed", "err", err)
+				logger.Warn("telemetry shutdown failed", "err", err)
 			}
 		}()
-	}
-
-	configs, err := config.LoadAll(*configPath, *managedConfig)
-	if err != nil {
-		logger.Error("failed to load configuration", "path", *configPath, "err", err)
-		os.Exit(1)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -108,4 +110,28 @@ func main() {
 	}
 
 	logger.Info("agent shutdown complete")
+}
+
+func buildTelemetryOptions(configs []*config.Config) telemetry.Options {
+	if len(configs) == 0 || configs[0] == nil {
+		return telemetry.Options{}
+	}
+	cfg := configs[0]
+	proxyDomain := strings.TrimSpace(cfg.Agent.Domain)
+	if proxyDomain == "" {
+		proxyDomain = strings.TrimSpace(cfg.Agent.EntryPoint)
+	}
+	return telemetry.Options{
+		Provider:            cfg.Telemetry.Provider,
+		ServiceName:         cfg.Telemetry.ServiceName,
+		Env:                 cfg.Telemetry.Env,
+		ProxyDomain:         proxyDomain,
+		OTelEnabled:         cfg.Telemetry.OTel.Enabled,
+		OTelEndpoint:        cfg.Telemetry.OTel.Endpoint,
+		OTelTracesEndpoint:  cfg.Telemetry.OTel.TracesEndpoint,
+		OTelMetricsEndpoint: cfg.Telemetry.OTel.MetricsEndpoint,
+		DDTraceEnabled:      cfg.Telemetry.DDTrace.Enabled,
+		DDAgentHost:         cfg.Telemetry.DDTrace.AgentHost,
+		DDAgentPort:         cfg.Telemetry.DDTrace.AgentPort,
+	}
 }
