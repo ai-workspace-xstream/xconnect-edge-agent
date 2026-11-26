@@ -38,6 +38,8 @@ type ClientListResponse struct {
 // StatusReport captures the runtime state of an agent and the managed Xray
 // instance.
 type StatusReport struct {
+	NodeTraffic *NodeTrafficSample `json:"nodeTraffic,omitempty"`
+
 	Overlay          *OverlayStatus    `json:"overlay,omitempty"`
 	GatewayTelemetry *GatewayTelemetry `json:"gatewayTelemetry,omitempty"`
 	AgentID          string            `json:"agentId"` // Self-reported agent ID (e.g., "hk-xhttp.svc.plus")
@@ -48,6 +50,15 @@ type StatusReport struct {
 	Users            int               `json:"users"`
 	SyncRevision     string            `json:"syncRevision,omitempty"`
 	Xray             XrayStatus        `json:"xray"`
+}
+
+// NodeTrafficSample contains cumulative Linux interface counters.
+type NodeTrafficSample struct {
+	Interface string    `json:"interface"`
+	BootID    string    `json:"bootId"`
+	RxBytes   uint64    `json:"rxBytes"`
+	TxBytes   uint64    `json:"txBytes"`
+	SampledAt time.Time `json:"sampledAt"`
 }
 
 // GatewayTelemetry captures non-secret runtime and traffic metrics from a

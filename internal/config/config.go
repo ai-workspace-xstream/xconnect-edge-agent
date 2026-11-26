@@ -38,7 +38,8 @@ type Log struct {
 }
 
 type Agent struct {
-	CustomAllowFree bool `yaml:"customAllowFree"`
+	TrafficInterface string `yaml:"trafficInterface"`
+	CustomAllowFree  bool   `yaml:"customAllowFree"`
 	// ResourceClass selects the user sync scope: shared, free, plus, pro, custom, or team.
 	AllowedEmails        []string       `yaml:"allowedEmails"`
 	ResourceClass        string         `yaml:"resourceClass"`

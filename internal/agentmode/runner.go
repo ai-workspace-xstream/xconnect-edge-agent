@@ -341,9 +341,19 @@ func runStatusReporter(ctx context.Context, client *Client, tracker *syncTracker
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	trafficFailed := false
+
 	send := func() {
 		snapshot := tracker.Snapshot()
 		report := buildStatusReport(agent, snapshot, syncInterval)
+		if agent.TrafficInterface != "" {
+			sample, err := sampleNodeTraffic(agent.TrafficInterface)
+			if err != nil && !trafficFailed {
+				logger.Warn("node traffic counters unavailable", "interface", agent.TrafficInterface, "err", err)
+			}
+			trafficFailed = err != nil
+			report.NodeTraffic = sample
+		}
 		if err := client.ReportStatus(ctx, report); err != nil {
 			logger.Warn("failed to report agent status", "err", err)
 		}
